@@ -5,17 +5,32 @@ from mpl_toolkits.mplot3d import Axes3D
 from point import *
 
 
-# return a 4x4 homogeneous rigid transformation matrix
+def quadratic_form(n1, A, n2):
+    # n1.T * A * n2
+    return np.matmul(np.matmul(n1.reshape((1, -1)), A), n2.reshape(-1, 1))
+
+
 def homo_rotation_mat(R, t):
-    R_ = np.zeros((4, 4))
-    R_[0:3, 0:3] = R
-    R_[0:3, 3] = t
-    R_[3, 3] = 1.0
-    return R_
+    """
+    get the homogeneous transformation matrix
+        R: 3x3 rotation matrix
+        t: 3x1 shift vector
+        return: a 4x4 transformation matrix
+    """
+    T = np.zeros((4, 4))
+    T[0:3, 0:3] = R
+    T[0:3, 3] = t
+    T[3, 3] = 1.0
+    return T
 
 
-# get the rotation matrix with rodriguez formula
 def rodriguez(axis, theta):
+    """
+    get the rotation matrix via rodriguez formula
+        axis: rotation axis
+        theta: rotated angle
+        return: a rotation matrix
+    """
     k = np.array(axis)
     k = k / np.linalg.norm(k)
     K = np.array([[0, -k[2], k[1]],
@@ -53,116 +68,51 @@ def cross_mat(n):
                     [-n_[1], n_[0], 0.0]])
 
 
-def ransac_f_mat(x1, x2, expect=0.0, eps=1e-5, max_iter=100):
+def point2line_distance(p, p0, n0):
+    delt = p - p0
+    n0 = np.array(n0)
+    n0_norm = n0 / np.linalg.norm(n0)
+    N = cross_mat(n0_norm)
+    v = np.matmul(N, delt)
+    return np.linalg.norm(v)
+
+
+def line2line_distance(n1, p1, n2, p2):
     """
-        x1: Nx3 homogeneous coordinate of camera1
-        x2: Nx3 homogeneous coordinate of camera2
-        expect: x2.T * F * x1 should equal to expected value, here is 0.0
-        eps: the threshold for inliers and outliers
-        max_iter: num of iteration
-        return: fundanmental matrix
+    calculate the distance between 3d lines
+        n1: the direction vector of the first line
+        p1: a point lies in the first line
+        n2: the direction vector of the second line
+        p2: a point lies in the second line
+        return: the distance
     """
-    def triangulation(F, x1, x2):
-        return np.matmul(np.matmul(x2.reshape(1, -1), F), x1.reshape((-1, 1)))
-
-    def solve_f(x1, x2, index):
-        N = x1.shape[0]
-        A = np.zeros((N, 9))
-        for i in index:
-            A[i, :] = np.matmul(x2[i, :].reshape((3, 1)), x1[i, :].reshape((1, 3))).reshape((9,))
-        _, _, V = np.linalg.svd(A)
-        F = V[8, :].reshape((3, 3))     # the eigenvector of the smallest eigen-value
-        U, S, V = np.linalg.svd(F)
-        S[2] = 0.0                      # set the smallest eigen-value 0 to make rank(F) = 8
-        D = np.diag(S)
-        F = np.matmul(np.matmul(U, D), V)
-        return F
-
-    def get_inliers(F, x1, x2, expect, eps):
-        inliers = []
-        for i in range(x1.shape[0]):
-            diff = np.square(triangulation(F, x1[i, :], x2[i, :]) - expect)
-            if diff < eps:
-                inliers.append(i)
-        return inliers
-
-    num = 8
-    N = x1.shape[0]
-    inlier_best = []
-    F_best = np.eye(3)
-    for i in range(max_iter):
-        index = random.sample(range(N), num)
-        F = solve_f(x1, x2, index)
-        inliers = get_inliers(F, x1, x2, expect, eps)
-        if len(inliers) > len(inlier_best):
-            inlier_best = inliers
-            F_best = F
-
-    if len(inlier_best) <= 0:
-        print("Error: ransac failed")
-        exit()
-
-    # iteration: use inliers to finetune F matrix
-    inliers = inlier_best
-    F = F_best
-    pre_len = 0
-    while len(inliers) > pre_len:
-        pre_len = len(inliers)
-        inlier_best = inliers
-        F_best = F
-        F = solve_f(x1, x2, inlier_best)
-        inliers = get_inliers(F, x1, x2, expect, eps)
-        print("inliers number: %d" % (len(inlier_best)))
-    return F_best
+    n1 = n1 / np.linalg.norm(n1)
+    # n2 = n2 / np.linalg.norm(n2)
+    N = np.eye(3) - np.matmul(n1.reshape((3, 1)), n1.reshape((1, 3)))
+    delt = p2 - p1
+    a = quadratic_form(n2, N, n2)
+    b = quadratic_form(delt, N, n2)
+    c = quadratic_form(delt, N, delt)
+    if a == 0:    # two lines are parallel
+        a = 1e-3
+    d2 = np.abs(c - b * b / a)
+    return np.sqrt(d2)[0]
 
 
-def decompose_essential_mat(E, *args):
-    U, Z, V = np.linalg.svd(E)
-    t = U[:, 2]                 # t belongs to the null space of E.T
-    Rz = np.array([[0., -1., 0.],
-                   [1., 0., 0.],
-                   [0., 0., 1.]])
-    R1 = np.matmul(np.matmul(U, Rz), V)
-    R2 = np.matmul(np.matmul(U, Rz.T), V)
-    return [R1, R2],  [t, -t]
+def plot_quadratic_form(A, d, xlim=10, ylim=10, width=200, height=200):
+    img = np.zeros((height, width))
+    px = np.linspace(-xlim, xlim, width)
+    py = np.linspace(-ylim, ylim, height)
+    for i in range(height):
+        for j in range(width):
+            p = np.array((px[j], py[i])).reshape((2, 1))
+            qd = quadratic_form(p, A, p)
+            if abs(qd - d) < 1:
+                img[i, j] = 255
+    plt.imshow(img, cmap='gray')
+    plt.show()
 
 
 if __name__ == "__main__":
-    import camera as ca
-    f = 1.0
-    sx = 0.002
-    sy = 0.002
-    sx = sx / f
-    sy = sy / f
-    W = 1920
-    H = 1080
-    theta = np.pi * 0.9
-    axis = np.array([-0.5, 1., 1.])
-    R = rodriguez(axis, theta)
-    t = np.array([0, -3, 6])
-    E = np.matmul(cross_mat(t), R)
-    K_ = np.array([[-sx, 0.0, H / 2 * sx],
-                   [0.0, sy, -W / 2 * sy],
-                   [0.0, 0.0, 1.0]])
-    K = np.linalg.pinv(K_)
-    F_ = np.matmul(np.matmul(K_.T, E), K_)
-
-    p2d1 = np.fromfile("../Data/p2d1.dat", np.float64).reshape((-1, 2))
-    p2d2 = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
-    p2d1 = np.column_stack((p2d1, np.ones((p2d1.shape[0], 1))))
-    p2d2 = np.column_stack((p2d2, np.ones((p2d2.shape[0], 1))))
-
-    p3d1 = ca.back_project(K_, p2d1)
-    p3d2 = ca.back_project(K_, p2d2)
-
-    F = ransac_f_mat(p2d1, p2d2, eps=1e-3)
-    for i in range(p2d1.shape[0]):
-        loss = np.matmul(np.matmul(p2d2[i, :].reshape(1, -1), F), p2d1[i, :].reshape(-1, 1))
-        print(loss)
-
-    E = np.matmul(np.matmul(K.T, F), K)
-    R_list, t_list = decompose_essential_mat(E)
-    R_, t_ = ca.check_validation_rt(R_list, t_list, p3d1, p3d2)
-    print(R)
-    print(R_)
-    print(t_)
+    A = np.array([[2.0, -0.9], [-0.9, 1.1]])
+    plot_quadratic_form(A, 50, xlim=10, ylim=10, width=200, height=200)

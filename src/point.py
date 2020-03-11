@@ -10,9 +10,9 @@ class Point3D:
         else:
             vec = np.array(vector).reshape((-1,))
             if vec.shape[0] == 4:
-                self.ph = np.array(vector)
+                self.ph = np.array(vec)
             elif vec.shape[0] == 3:
-                self.p = np.array(vector)
+                self.p = np.array(vec)
 
     def __repr__(self):
         return str(self.p)
@@ -21,12 +21,15 @@ class Point3D:
         if key == 'x':
             self.__dict__[key] = value
             self.__dict__['p'][0] = value
+            self.__dict__['ph'][0] = value
         elif key == 'y':
             self.__dict__[key] = value
             self.__dict__['p'][1] = value
+            self.__dict__['ph'][1] = value
         elif key == 'z':
             self.__dict__[key] = value
             self.__dict__['p'][2] = value
+            self.__dict__['ph'][2] = value
         elif key == 'p':
             self.__dict__[key] = np.array(value)
             self.__dict__['x'] = value[0]
@@ -56,6 +59,15 @@ class Point3D:
             return Point3D(self.p + b.p)
         else:
             return Point3D(self.p + np.array(b))         # Point add a vector result to another point
+
+    def __mul__(self, b):
+        if isinstance(b, Point3D):
+            return np.matmul(self.p, b.p)               # dot product
+        else:
+            return Point3D(self.p * b)                  # Point * scalar
+
+    def __truediv__(self, other):
+        return Point3D(self.p / other)                  # Point / scalar
 
     def rigid_transform(self, *args):
         if len(args) == 1:
@@ -92,6 +104,32 @@ class ImgPlane:
 def plot3d(point_list, ax, marker='^', s=40, color='red'):
     for p in point_list:
         ax.scatter(p.x, p.y, p.z, marker=marker, s=s, color=color)
+
+
+def list2mat(plist):
+    N = len(plist)
+    mat = np.zeros((N, 3), np.float32)
+    for i in range(N):
+        mat[i, :] = plist[i].p
+    return mat
+
+
+def mat2list(mat):
+    N = mat.shape[0]
+    plist = []
+    for i in range(N):
+        plist.append(Point3D(mat[i]))
+    return plist
+
+
+def save_points_to_file(plist, file_name):
+    mat = list2mat(plist)
+    mat.tofile(file_name)
+
+
+def read_points_from_file(file_name):
+    mat = np.fromfile(file_name, np.float32).reshape((-1, 3))
+    return mat2list(mat)
 
 
 if __name__ == "__main__":
