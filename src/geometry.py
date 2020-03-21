@@ -99,6 +99,23 @@ def line2line_distance(n1, p1, n2, p2):
     return np.sqrt(d2)[0]
 
 
+def pca(mat):
+    m, n = mat.shape
+    center = np.zeros((m,))
+    for i in range(n):
+        center += mat[:, i]
+    center = center / n
+
+    X = mat
+    for i in range(n):
+        X[:, i] -= center
+    cov_mat = np.matmul(X, X.T) / n
+    lamda, eig_V = np.linalg.eig(cov_mat)
+    # print(np.matmul(cov_mat, eig_V[:, 0]))
+    # print(lamda[0] * eig_V[:, 0])
+    return lamda, eig_V
+
+
 def plot_quadratic_form(A, d, xlim=10, ylim=10, width=200, height=200):
     img = np.zeros((height, width))
     px = np.linspace(-xlim, xlim, width)
@@ -116,3 +133,12 @@ def plot_quadratic_form(A, d, xlim=10, ylim=10, width=200, height=200):
 if __name__ == "__main__":
     A = np.array([[2.0, -0.9], [-0.9, 1.1]])
     plot_quadratic_form(A, 50, xlim=10, ylim=10, width=200, height=200)
+
+    A = [[-1, 1, 0],
+         [-4, 3, 0],
+         [1, 0, 2]]
+    lamda, eig_vec = np.linalg.eig(A)
+    print(lamda)
+    print(eig_vec)
+    print(lamda[1] * eig_vec[:, 1])
+    print(np.matmul(A, eig_vec[:, 1]))
