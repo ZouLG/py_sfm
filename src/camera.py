@@ -245,7 +245,59 @@ class PinHoleCamera:
         err = np.linalg.norm(pi - pi_)
         return err
 
-    def estimate_pose_epnp(self, pw, pi, S_):
+    def estimate_pose_p4p(self, pw, pi):
+        table4 = np.array([[0, 1, 2, 3],
+                          [1, 4, 5, 6],
+                          [2, 5, 7, 8],
+                          [3, 6, 8, 9]])
+
+        table5 = np.array([[0, 1, 2, 3, 4],
+                           [1, 5, 6, 7, 8],
+                           [2, 6, 9, 10, 11],
+                           [3, 7, 10, 12, 13],
+                           [4, 8, 11, 12, 14]])
+
+        def get_first_order(s2, table):
+            def check_s1(s1, s2):
+                n = len(s1)
+                s2_ = np.zeros(s2.shape)
+                for i in range(n):
+                    for j in range(i, n):
+                        s2_[table[i, j]] = s1[i] * s1[j]
+                if np.max(np.abs(s2_ - s2)) > 0.0001:
+                    return False
+                return True
+
+            m = len(s2)
+            n = int((np.sqrt(m * 8 + 1) - 1) / 2)
+            s2 = s2 * np.sign(s2[0])
+            s1 = np.zeros((n,))
+            s1[0] = np.sqrt(s2[0])
+            for i in range(1, n):
+                s1[i] = s2[i] / s1[0]
+            if check_s1(s1, s2):
+                return s1
+
+        def recover_Rt(pc, pw):
+            n = len(pc)
+            center_c = Point3D((0, 0, 0))
+            center_w = center_c
+            for p, q in zip(pc, pw):
+                center_c += p
+                center_w += q
+            center_c /= n
+            center_w /= n
+            mc = list2mat(pc)
+            mw = list2mat(pw)
+            mc_c = mc - np.tile(center_c.p, (n, 1))
+            mw_c = mw - np.tile(center_w.p, (n, 1))
+            R = np.matmul(np.linalg.pinv(np.matmul(mw_c.T, mw_c)), np.matmul(mw_c.T, mc_c))
+            U, Z, V = np.linalg.svd(R)
+            R = np.matmul(U, V)
+            ta = mc - np.matmul(mw, R)
+            t = np.mean(ta, axis=0)
+            return R.T, t
+
         def data_normalization(pw):
             n = len(pw)
             center = Point3D(np.zeros((3,)))
@@ -273,7 +325,7 @@ class PinHoleCamera:
             vj = V[j, :].reshape((1, -1))
             vk = V[k, :].reshape((-1, 1))
             vl = V[l, :].reshape((1, -1))
-            print(vi.shape, vj.shape, vk.shape, vl.shape)
+            # print(vi.shape, vj.shape, vk.shape, vl.shape)
             return np.matmul(vi, vj) - np.matmul(vk, vl)
 
         def upper_mat2vec(mat):
@@ -287,13 +339,7 @@ class PinHoleCamera:
                     idx += 1
             return vec
 
-        data = data_normalization(pw)
-
         # S = [ s0s0, s0s1, s0s2, s1s1, s1s2, s2s2 ]
-        table = np.array([[0, 1, 2, 3],
-                          [1, 4, 5, 6],
-                          [2, 5, 7, 8],
-                          [3, 6, 8, 9]])
         pc = self.project_image2camera(pi)
         dot_c = np.zeros((4, 4))
         dot_w = np.zeros((4, 4))
@@ -309,17 +355,15 @@ class PinHoleCamera:
         j_range = [1, 2, 3, 2, 3, 3]
         k_range = [1, 2, 3, 2, 3, 3]
         for i, j, k in zip(i_range, j_range, k_range):
-            L[idx, table[i, i]] += dot_c[i, i]
-            L[idx, table[i, j]] += -dot_c[i, j]
-            L[idx, table[i, k]] += -dot_c[i, k]
-            L[idx, table[j, k]] += dot_c[j, k]
+            L[idx, table4[i, i]] += dot_c[i, i]
+            L[idx, table4[i, j]] += -dot_c[i, j]
+            L[idx, table4[i, k]] += -dot_c[i, k]
+            L[idx, table4[j, k]] += dot_c[j, k]
             b[idx] = dot_w[i, i] + dot_w[j, k] - dot_w[i, j] - dot_w[i, k]
             idx += 1
         L = np.column_stack([L, -b])
         U, Z, V = np.linalg.svd(L)
         V = V[6:, :].T
-        print(Z)
-        print(V.shape)
         rl = np.zeros((19, 15))
         rl[0, :] = upper_mat2vec(get_permutation(V, 0, 4, 1, 1))  # 00 11 = 01 01
         rl[1, :] = upper_mat2vec(get_permutation(V, 0, 5, 1, 2))  # 00 12 = 01 02
@@ -340,9 +384,16 @@ class PinHoleCamera:
         rl[16, :] = upper_mat2vec(get_permutation(V, 5, 8, 6, 7)) # 12 23 = 13 22
         rl[17, :] = upper_mat2vec(get_permutation(V, 5, 9, 6, 8)) # 12 33 = 13 23
         rl[18, :] = upper_mat2vec(get_permutation(V, 7, 9, 8, 8)) # 22 33 = 23 23
-        U, Z, V = np.linalg.svd(rl)
-        print(Z)
-        print(V[-1, :])
+        u, z, v = np.linalg.svd(rl)
+        v = v[-1, :]    # the null space
+        a1 = get_first_order(v, table5)
+        S2 = np.matmul(V, a1.reshape(-1, 1))
+        S2 = S2 / S2[-1]    # scale to make the last element equal to 1
+        S1 = get_first_order(S2[0:10], table4)
+        for i in range(len(pc)):
+            pc[i].p *= S1[i]
+        R, t = recover_Rt(pc, pw)
+        return R, t
 
     def rotate_around_axis(self, theta, axis=0):
         if axis == 0:
@@ -547,19 +598,17 @@ def test_decompose():
 
 
 def test_pnp():
-    pi = np.fromfile("../Data/p2d1.dat", np.float64).reshape((-1, 2))
+    pi = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
+    pc = read_points_from_file("../Data/p3d2.dat")
     pw = read_points_from_file("../Data/pw.dat")
+    print(pi)
+    for p, q in zip(pw, pc):
+        print(p.p, q.p)
     camera = PinHoleCamera()
 
-    S_ = np.zeros((7, 1))
-    idx = 0
-    for i in range(3):
-        for j in range(i, 3):
-            S_[idx] = pw[i].z * pw[j].z
-            idx += 1
-    S_[idx] = 1.0
-
-    S = camera.estimate_pose_epnp(pw, pi, S_)
+    R, t = camera.estimate_pose_p4p(pw, pi)
+    print(R)
+    print(t)
 
 
 def test_impact_f():
