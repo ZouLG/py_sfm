@@ -99,6 +99,14 @@ def line2line_distance(n1, p1, n2, p2):
     return np.sqrt(d2)[0]
 
 
+def calc_center(plist):
+    center = Point3D((0, 0, 0))
+    for p in plist:
+        center += p
+    center = center / len(plist)
+    return center
+
+
 def pca(mat):
     m, n = mat.shape
     center = np.zeros((m,))
@@ -114,6 +122,91 @@ def pca(mat):
     # print(np.matmul(cov_mat, eig_V[:, 0]))
     # print(lamda[0] * eig_V[:, 0])
     return lamda, eig_V
+
+
+def get_idx_table(n):
+    table = np.zeros((n, n), np.int)
+    idx = 0
+    for i in range(n):
+        for j in range(i, n):
+            table[i, j] = idx
+            table[j, i] = idx
+            idx += 1
+    return table
+
+
+def get_first_order(s2, table):
+    def check_s1(s1, s2):
+        n = len(s1)
+        s2_ = np.zeros(s2.shape)
+        for i in range(n):
+            for j in range(i, n):
+                s2_[table[i, j]] = s1[i] * s1[j]
+        if np.max(np.abs(s2_ - s2)) > 0.0001:
+            return False
+        return True
+    m = len(s2)
+    n = int((np.sqrt(m * 8 + 1) - 1) / 2)
+    s2 = s2 * np.sign(s2[0])
+    s1 = np.zeros((n,))
+    s1[0] = np.sqrt(s2[0])
+    for i in range(1, n):
+        s1[i] = s2[i] / s1[0]
+    if check_s1(s1, s2):
+        return s1
+
+
+def solve_re_linearization(M, s_dim):
+    def upper_mat2vec(mat):
+        dim = mat.shape[0]
+        vec_len = (1 + dim) * dim // 2
+        vec = np.zeros((vec_len,))
+        idx = 0
+        for i in range(dim):
+            for j in range(i, dim):
+                vec[idx] = mat[i, j] + mat[j, i] * (j > i)
+                idx += 1
+        return vec
+
+    def get_permutation_list(n):
+        table = get_idx_table(n)
+        permu_list = []
+        for i in range(0, n - 1):
+            for j in range(i, n - 1):
+                for k in range(i + 1, n):
+                    for l in range(k, n):
+                        if (j == k and k == l) or j > k:
+                            continue
+                        if j == k:
+                            print(i, j, k, l)
+                            permu_list.append((table[i, j], table[k, l], table[i, l], table[j, k]))
+                        else:
+                            print(i, j, k, l)
+                            permu_list.append((table[i, j], table[k, l], table[i, k], table[j, l]))
+                        if (i < j) and (j < k) and (k < l):
+                            print(i, j, k, l)
+                            permu_list.append((table[i, j], table[k, l], table[i, l], table[j, k]))
+        print(len(permu_list))
+        return permu_list
+
+    def get_coefs(M, i, j, k, l):
+        vi = M[i, :].reshape((-1, 1))
+        vj = M[j, :].reshape((1, -1))
+        vk = M[k, :].reshape((-1, 1))
+        vl = M[l, :].reshape((1, -1))
+        # print(vi.shape, vj.shape, vk.shape, vl.shape)
+        return np.matmul(vi, vj) - np.matmul(vk, vl)
+
+    m, n = M.shape
+    permu_list = get_permutation_list(s_dim)
+    L = np.zeros((len(permu_list), (n + 1) * n // 2))
+    for i in range(len(permu_list)):
+        p = permu_list[i]
+        L[i, :] = upper_mat2vec(get_coefs(M, p[0], p[1], p[2], p[3]))
+    u, z, v = np.linalg.svd(L)
+    S2 = v[-1, :]
+    S1 = get_first_order(S2, get_idx_table(n))
+    return S1
 
 
 def plot_quadratic_form(A, d, xlim=10, ylim=10, width=200, height=200):
