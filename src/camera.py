@@ -248,30 +248,100 @@ class PinHoleCamera:
     def estimate_pose_epnp(self, pw, pi, ctrl_num=4):
         def get_control_points(pw):
             p0 = geo.calc_center(pw)
-            p1 = Point3D((1, 0, 0))
-            p2 = Point3D((0, 1, 0))
-            p3 = Point3D((0, 0, 1))
+            lamda, eig_v = geo.pca(list2mat(pw).T)
+            p1 = p0 + np.sqrt(lamda[0]) * eig_v[0]
+            p2 = p0 + np.sqrt(lamda[1]) * eig_v[1]
+            p3 = p0 + np.sqrt(lamda[2]) * eig_v[2]
+            # p1 = Point3D((1, 0, 0))
+            # p2 = Point3D((0, 1, 0))
+            # p3 = Point3D((0, 0, 1))
             return p0, p1, p2, p3
 
         def calc_barycentric(ctrl_pts, pw):
             m = len(ctrl_pts)
             n = len(pw)
-            bary_coor = np.zeros((n, m))
+            base = list2mat(ctrl_pts)
+            base = np.column_stack((base, np.ones((m,))))   # sum(bc) = 1
+            base_inv = np.linalg.pinv(np.matmul(base, base.T))
+            mat_pw = np.column_stack((list2mat(pw), np.ones(n,)))
+
+            bary_coef = np.matmul(np.matmul(mat_pw, base.T), base_inv)
+            # print(list2mat(ctrl_pts).T)
+            # print(bary_coef.T)
+            # print(np.matmul(list2mat(ctrl_pts).T, bary_coef.T).T)
+            return bary_coef
+
+        def calc_dist(pw):
+            n = len(pw)
+            idx = 0
+            dist = np.zeros(geo.sum_to_n(n - 1),)
             for i in range(n):
-                p = pw[i]
-                bc = np.ones((m,))
-                for j in range(1, m):
-                    p = Point3D(p - ctrl_pts[j - 1] * bc[j - 1])
-                    bc[j] = ctrl_pts[j] * p
-                bary_coor[i, :] = bc
-            print(bary_coor.T)
-            print(list2mat(ctrl_pts).T)
-            print(np.matmul(list2mat(ctrl_pts).T, bary_coor.T))
-            return bary_coor
+                for j in range(i + 1, n):
+                    dist[idx] = np.linalg.norm(pw[i] - pw[j])
+                    idx += 1
+            return dist
+
+        def recover_Rt(pc, pw):
+            n = len(pc)
+            center_c = Point3D((0, 0, 0))
+            center_w = center_c
+            for p, q in zip(pc, pw):
+                center_c += p
+                center_w += q
+            center_c /= n
+            center_w /= n
+            mc = list2mat(pc)
+            mw = list2mat(pw)
+            mc_c = mc - np.tile(center_c.p, (n, 1))
+            mw_c = mw - np.tile(center_w.p, (n, 1))
+            R = np.matmul(np.linalg.pinv(np.matmul(mw_c.T, mw_c)), np.matmul(mw_c.T, mc_c))
+            U, Z, V = np.linalg.svd(R)
+            R = np.matmul(U, V)
+            ta = mc - np.matmul(mw, R)
+            t = np.mean(ta, axis=0)
+            return R.T, t
+
+        def calc_sign(ctrl_pc):
+            depth = np.array([p.z for p in ctrl_pc])
+            print(depth)
+            if (np.sum(depth) > 0.0) > len(ctrl_pc) // 2:
+                return 1
+            else:
+                return -1
+
+        def estimate_pose_n1(v, ctrl_pw):
+            ctrl_pc = []
+            for i in range(0, len(ctrl_pw)):
+                ctrl_pc.append(Point3D(v[i * 3: i * 3 + 3]))
+            dist_c = calc_dist(ctrl_pc)
+            dist_w = calc_dist(ctrl_pw)
+            scale = calc_sign(ctrl_pc) * np.matmul(dist_w, dist_c) / np.matmul(dist_c, dist_c)
+            for i in range(len(ctrl_pc)):
+                ctrl_pc[i].p = ctrl_pc[i].p * scale
+            R, t = recover_Rt(ctrl_pc, ctrl_pw)
+            return R, t
+
+        def estimate_pose_n2(v, ctrl_pw, N=2):
+            n = len(ctrl_pw)
+            V = np.split(v, n)
+            m = geo.sum_to_n(n - 1)
+            L = np.zeros((m, geo.sum_to_n(N)))
+            idx = 0
+            for i in range(n):
+                for j in range(i + 1, n):
+                    dv = V[i] - V[j]
+                    L[idx, :] = geo.trans_mat2vec(np.matmul(dv.T, dv))
+                    idx += 1
+            dist_w = calc_dist(ctrl_pw)
+            L_pinv = np.linalg.pinv(np.matmul(L.T, L))
+            beta = np.matmul(L_pinv, np.matmul(L.T, dist_w))
+            beta1 = geo.get_first_order(beta, geo.get_idx_table(2))
+            print(beta1)
+            print(beta)
 
         n = len(pw)
-        ctrl_pts = get_control_points(pw)
-        bc = calc_barycentric(ctrl_pts, pw)
+        ctrl_pw = get_control_points(pw)
+        bc = calc_barycentric(ctrl_pw, pw)
         L = np.zeros((n * 2, ctrl_num * 3))
         fu = self.K[0, 0]
         fv = self.K[1, 1]
@@ -283,10 +353,17 @@ class PinHoleCamera:
                 L[i * 2, j * 3 + 2] = (uc - pi[i, 0]) * bc[i, j]
                 L[i * 2 + 1, j * 3 + 1] = fv * bc[i, j]
                 L[i * 2 + 1, j * 3 + 2] = (vc - pi[i, 1]) * bc[i, j]
-        M = np.matmul(L.T, L)
-        lamda, eig_v = np.linalg.eig(M)
+        u, z, eig_v = np.linalg.svd(L)
+        eig_v = eig_v.T
+        print(z)
+        # M = np.matmul(L.T, L)
+        # lamda, eig_v = np.linalg.eig(M)
         # print(lamda)
-
+        R, t = estimate_pose_n1(eig_v[:, -1], ctrl_pw)
+        print(R)
+        print(t)
+        estimate_pose_n2(eig_v[:, -2:], ctrl_pw)
+        return R, t
 
     def estimate_pose_p4p(self, pw, pi):
         def recover_Rt(pc, pw):
@@ -548,11 +625,11 @@ def test_decompose():
 
 def test_pnp():
     pi = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
+    # pi += np.random.normal(0.0, 5, pi.shape)
     pc = read_points_from_file("../Data/p3d2.dat")
     pw = read_points_from_file("../Data/pw.dat")
     print(list2mat(pw))
-    camera = PinHoleCamera()
-
+    camera = PinHoleCamera(f=1.0)
     camera.estimate_pose_epnp(pw, pi, 4)
 
 
