@@ -5,6 +5,10 @@ from mpl_toolkits.mplot3d import Axes3D
 from point import *
 
 
+def sum_to_n(n):
+    return (1 + n) * n // 2
+
+
 def quadratic_form(n1, A, n2):
     # n1.T * A * n2
     return np.matmul(np.matmul(n1.reshape((1, -1)), A), n2.reshape(-1, 1))
@@ -153,21 +157,23 @@ def get_first_order(s2, table):
     for i in range(1, n):
         s1[i] = s2[i] / s1[0]
     if check_s1(s1, s2):
-        return s1
+        print("warning: ")
+    return s1
+
+
+def trans_mat2vec(mat):
+    dim = mat.shape[0]
+    vec_len = sum_to_n(dim)
+    vec = np.zeros((vec_len,))
+    idx = 0
+    for i in range(dim):
+        for j in range(i, dim):
+            vec[idx] = mat[i, j] + mat[j, i] * (j > i)
+            idx += 1
+    return vec
 
 
 def solve_re_linearization(M, s_dim):
-    def upper_mat2vec(mat):
-        dim = mat.shape[0]
-        vec_len = (1 + dim) * dim // 2
-        vec = np.zeros((vec_len,))
-        idx = 0
-        for i in range(dim):
-            for j in range(i, dim):
-                vec[idx] = mat[i, j] + mat[j, i] * (j > i)
-                idx += 1
-        return vec
-
     def get_permutation_list(n):
         table = get_idx_table(n)
         permu_list = []
@@ -199,11 +205,12 @@ def solve_re_linearization(M, s_dim):
 
     m, n = M.shape
     permu_list = get_permutation_list(s_dim)
-    L = np.zeros((len(permu_list), (n + 1) * n // 2))
+    L = np.zeros((len(permu_list), sum_to_n(n)))
     for i in range(len(permu_list)):
         p = permu_list[i]
-        L[i, :] = upper_mat2vec(get_coefs(M, p[0], p[1], p[2], p[3]))
+        L[i, :] = trans_mat2vec(get_coefs(M, p[0], p[1], p[2], p[3]))
     u, z, v = np.linalg.svd(L)
+    print(z)
     S2 = v[-1, :]
     S1 = get_first_order(S2, get_idx_table(n))
     return S1

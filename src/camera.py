@@ -321,7 +321,7 @@ class PinHoleCamera:
             R, t = recover_Rt(ctrl_pc, ctrl_pw)
             return R, t
 
-        def estimate_pose_n2(v, ctrl_pw, N=2):
+        def estimate_pose_n234(v, ctrl_pw, N=2):
             n = len(ctrl_pw)
             V = np.split(v, n)
             m = geo.sum_to_n(n - 1)
@@ -333,11 +333,21 @@ class PinHoleCamera:
                     L[idx, :] = geo.trans_mat2vec(np.matmul(dv.T, dv))
                     idx += 1
             dist_w = calc_dist(ctrl_pw)
-            L_pinv = np.linalg.pinv(np.matmul(L.T, L))
-            beta = np.matmul(L_pinv, np.matmul(L.T, dist_w))
-            beta1 = geo.get_first_order(beta, geo.get_idx_table(2))
-            print(beta1)
-            print(beta)
+            dist_w = dist_w * dist_w
+            if N == 4:
+                uu, z, vv = np.linalg.svd(L)
+                print(z)
+                vv = vv[-4:, :].T
+                beta1 = geo.solve_re_linearization(vv, 4)
+            else:
+                L_pinv = np.linalg.pinv(np.matmul(L.T, L))
+                beta2 = np.matmul(L_pinv, np.matmul(L.T, dist_w))
+                beta1 = geo.get_first_order(beta2, geo.get_idx_table(N))
+            ctrl_pc = [Point3D(np.matmul(pc, beta1)) for pc in V]
+            sign = calc_sign(ctrl_pc)
+            ctrl_pc = [pc * sign for pc in ctrl_pc]
+            R, t = recover_Rt(ctrl_pc, ctrl_pw)
+            return R, t
 
         n = len(pw)
         ctrl_pw = get_control_points(pw)
@@ -355,14 +365,16 @@ class PinHoleCamera:
                 L[i * 2 + 1, j * 3 + 2] = (vc - pi[i, 1]) * bc[i, j]
         u, z, eig_v = np.linalg.svd(L)
         eig_v = eig_v.T
-        print(z)
+        # print(z)
         # M = np.matmul(L.T, L)
         # lamda, eig_v = np.linalg.eig(M)
         # print(lamda)
-        R, t = estimate_pose_n1(eig_v[:, -1], ctrl_pw)
+        # R, t = estimate_pose_n1(eig_v[:, -1], ctrl_pw)
+        # R, t = estimate_pose_n234(eig_v[:, -2:], ctrl_pw)
+        # R, t = estimate_pose_n234(eig_v[:, -3:], ctrl_pw, 3)
+        R, t = estimate_pose_n234(eig_v[:, -4:], ctrl_pw, 4)
         print(R)
         print(t)
-        estimate_pose_n2(eig_v[:, -2:], ctrl_pw)
         return R, t
 
     def estimate_pose_p4p(self, pw, pi):
