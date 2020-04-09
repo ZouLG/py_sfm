@@ -146,9 +146,11 @@ def get_first_order(s2, table):
         for i in range(n):
             for j in range(i, n):
                 s2_[table[i, j]] = s1[i] * s1[j]
-        if np.max(np.abs(s2_ - s2)) > 0.0001:
+        err = np.max(np.abs(s2_ - s2))
+        if err > 0.0001:
             return False
         return True
+
     m = len(s2)
     n = int((np.sqrt(m * 8 + 1) - 1) / 2)
     s2 = s2 * np.sign(s2[0])
@@ -156,8 +158,7 @@ def get_first_order(s2, table):
     s1[0] = np.sqrt(s2[0])
     for i in range(1, n):
         s1[i] = s2[i] / s1[0]
-    if check_s1(s1, s2):
-        print("warning: ")
+    check_s1(s1, s2)
     return s1
 
 
@@ -171,6 +172,27 @@ def trans_mat2vec(mat):
             vec[idx] = mat[i, j] + mat[j, i] * (j > i)
             idx += 1
     return vec
+
+
+def recover_Rt(pc, pw):
+    n = len(pc)
+    center_c = Point3D((0, 0, 0))
+    center_w = center_c
+    for p, q in zip(pc, pw):
+        center_c += p
+        center_w += q
+    center_c /= n
+    center_w /= n
+    mc = list2mat(pc)
+    mw = list2mat(pw)
+    mc_c = mc - np.tile(center_c.p, (n, 1))
+    mw_c = mw - np.tile(center_w.p, (n, 1))
+    R = np.matmul(np.linalg.pinv(np.matmul(mw_c.T, mw_c)), np.matmul(mw_c.T, mc_c))
+    U, Z, V = np.linalg.svd(R)
+    R = np.matmul(U, V)
+    ta = mc - np.matmul(mw, R)
+    t = np.mean(ta, axis=0)
+    return R.T, t
 
 
 def solve_re_linearization(M, s_dim):

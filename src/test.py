@@ -5,6 +5,7 @@ from point import *
 from camera import *
 from geometry import *
 import visualize as vis
+import epnp
 
 
 def generate_cube_points(axis, theta, o=(0., 0., 0.), edge_width=1):
@@ -37,10 +38,10 @@ def generate_rand_points(num=1, loc=[0, 0, 0], scale=[1, 1, 1]):
 
 
 def generate_training_data():
-    axis = [-1.5, 1.9, -1.1]
-    theta = np.pi * 1.2
+    axis = [-1.0, -1.0, 1.0]
+    theta = np.pi * 0.6
     R = rodriguez(axis, theta)
-    t = np.array([5, 10, 15])
+    t = np.array([5, 5, 10])
     print("R = \n", R)
     print("t = \n", t)
     plt.figure()
@@ -53,14 +54,12 @@ def generate_training_data():
     camera2.show(ax)
     print("E = \n", camera2.get_essential_mat())
 
-    p = generate_rand_points(4, [0, 0, 9], [3, 3, 3])
+    p = generate_rand_points(20, [0, 0, 9], [3, 3, 3])
     # p = generate_cube_points((1., 1., 1.), 0 * np.pi / 2, Point3D((0., 0., 25)), 10)
     # p = [Point3D((3, 6, 10))]
     p2d1, p3d1 = camera1.project_world2image(p)
     p2d2, p3d2 = camera2.project_world2image(p)
-    print("world frame:")
-    for i in p:
-        print(i.p)
+
     camera1.show_projection(ax, p)
     camera2.show_projection(ax, p)
     img1 = camera1.show_projected_img(p)
@@ -84,7 +83,6 @@ def generate_training_data():
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.set_zlabel("z")
-    plt.show()
 
 
 def check_camera_position():
@@ -122,7 +120,6 @@ def check_camera_position():
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.set_zlabel("z")
-    plt.show()
 
 
 def test_visualizer():
@@ -136,6 +133,50 @@ def test_visualizer():
     p2d1 = np.fromfile("../Data/p2d1.dat", np.float64).reshape((-1, 2))
     p2d2 = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
     vis.test_visualizer(ax, camera1, camera2, p2d1, p2d2)
+
+
+def test_pnp():
+    pi = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
+    # pi += np.random.normal(0.0, 5, pi.shape)
+    pc = read_points_from_file("../Data/p3d2.dat")
+    pw = read_points_from_file("../Data/pw.dat")
+    print(list2mat(pw))
+    camera = PinHoleCamera()
+    epnp.estimate_pose_epnp(camera.K, pw, pi, 4)
+
+
+def test_back_end():
+    f = 1.05
+    pi1 = np.fromfile("../Data/p2d1.dat", np.float64).reshape((-1, 2))
+    pi2 = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
+    pi1 += np.random.normal(0.0, 15, pi1.shape)
+    pi2 += np.random.normal(0.0, 15, pi2.shape)
+    # pw = read_points_from_file("../Data/pw.dat")
+    # print(list2mat(pw))
+
+    camera1 = PinHoleCamera(f=f)
+    pc1 = camera1.project_image2camera(pi1)
+    pc2 = camera1.project_image2camera(pi2)
+    E = get_null_space_ransac(list2mat(pc1), list2mat(pc2), max_iter=40)
+    R_list, t_list = decompose_essential_mat(E)
+    R, t = check_validation_rt(R_list, t_list, pc1, pc2)
+    t *= 15
+
+    err = []
+    for i in range(30):
+        camera2 = PinHoleCamera(f=f, R=R, t=t)
+        pw, _, _ = camera_triangulation(camera1, camera2, pi1, pi2)
+        err.append(camera1.calc_projection_error(pw, pi1) + camera2.calc_projection_error(pw, pi2))
+        R, t = epnp.estimate_pose_epnp(camera2.K, pw, pi2, 4)
+
+    t = t / np.linalg.norm(t) * 15
+    print(err)
+    plt.figure()
+    plt.stem(err)
+    print(R)
+    print(t)
+    R.tofile("../Data/R.dat")
+    t.tofile("../Data/t.dat")
 
 
 def plot_data():
@@ -160,5 +201,7 @@ def plot_data():
 if __name__ == "__main__":
     # plot_data()
     generate_training_data()
-    # check_camera_position()
+    test_back_end()
+    check_camera_position()
     # test_visualizer()
+    plt.show()

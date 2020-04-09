@@ -241,7 +241,7 @@ class PinHoleCamera:
         project the 3d points in world-frame, calculate error between the projected 2d coordinates
             with the real image coordinates
         """
-        pi_ = project_world2image(pw)
+        pi_, _ = self.project_world2image(pw)
         err = np.linalg.norm(pi - pi_)
         return err
 
@@ -304,7 +304,7 @@ class PinHoleCamera:
         def calc_sign(ctrl_pc):
             depth = np.array([p.z for p in ctrl_pc])
             print(depth)
-            if (np.sum(depth) > 0.0) > len(ctrl_pc) // 2:
+            if np.sum(depth > 0.0) > len(ctrl_pc) // 2:
                 return 1
             else:
                 return -1
@@ -334,15 +334,17 @@ class PinHoleCamera:
                     idx += 1
             dist_w = calc_dist(ctrl_pw)
             dist_w = dist_w * dist_w
-            if N == 4:
-                uu, z, vv = np.linalg.svd(L)
-                print(z)
-                vv = vv[-4:, :].T
-                beta1 = geo.solve_re_linearization(vv, 4)
+            if L.shape[0] < L.shape[1]:
+                uu, z, vv = np.linalg.svd(np.column_stack((L, -dist_w)))
+                vv = vv[-(L.shape[1] - L.shape[0] + 1):, :].T
+                a = geo.solve_re_linearization(vv, N)
+                beta2 = np.matmul(vv, a)
+                beta2 /= beta2[-1]
+                beta2 = beta2[:-1]
             else:
                 L_pinv = np.linalg.pinv(np.matmul(L.T, L))
                 beta2 = np.matmul(L_pinv, np.matmul(L.T, dist_w))
-                beta1 = geo.get_first_order(beta2, geo.get_idx_table(N))
+            beta1 = geo.get_first_order(beta2, geo.get_idx_table(N))
             ctrl_pc = [Point3D(np.matmul(pc, beta1)) for pc in V]
             sign = calc_sign(ctrl_pc)
             ctrl_pc = [pc * sign for pc in ctrl_pc]
@@ -372,7 +374,7 @@ class PinHoleCamera:
         # R, t = estimate_pose_n1(eig_v[:, -1], ctrl_pw)
         # R, t = estimate_pose_n234(eig_v[:, -2:], ctrl_pw)
         # R, t = estimate_pose_n234(eig_v[:, -3:], ctrl_pw, 3)
-        R, t = estimate_pose_n234(eig_v[:, -4:], ctrl_pw, 4)
+        # R, t = estimate_pose_n234(eig_v[:, -4:], ctrl_pw, 4)
         print(R)
         print(t)
         return R, t
@@ -635,16 +637,6 @@ def test_decompose():
     t_.tofile("../Data/t.dat")
 
 
-def test_pnp():
-    pi = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
-    # pi += np.random.normal(0.0, 5, pi.shape)
-    pc = read_points_from_file("../Data/p3d2.dat")
-    pw = read_points_from_file("../Data/pw.dat")
-    print(list2mat(pw))
-    camera = PinHoleCamera(f=1.0)
-    camera.estimate_pose_epnp(pw, pi, 4)
-
-
 def test_impact_f():
     def show_back_project(ax, camera, p2d, marker='o', color='blue'):
         camera.show(ax, color=color)
@@ -675,7 +667,6 @@ def test_impact_f():
 
 
 if __name__ == "__main__":
-    # test_decompose()
+    test_decompose()
     # test_camera_func()
     # test_impact_f()
-    test_pnp()

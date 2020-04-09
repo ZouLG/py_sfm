@@ -50,24 +50,24 @@ class Point3D:
 
     def __sub__(self, b):
         if isinstance(b, Point3D):
-            return self.p - b.p                         # Point sub a Point result to vector
+            return self.p - b.p     # Point sub a Point result to vector
         else:
-            return Point3D(self.p - np.array(b))        # get the src point of the vector
+            return Point3D(self.p - np.array(b))    # get the src point of the vector
 
     def __add__(self, b):
         if isinstance(b, Point3D):
             return Point3D(self.p + b.p)
         else:
-            return Point3D(self.p + np.array(b))         # Point add a vector result to another point
+            return Point3D(self.p + np.array(b))    # Point add a vector result to another point
 
     def __mul__(self, b):
         if isinstance(b, Point3D):
-            return np.matmul(self.p, b.p)               # dot product
+            return np.matmul(self.p, b.p)   # dot product
         else:
-            return Point3D(self.p * b)                  # Point * scalar
+            return Point3D(self.p * b)  # Point * scalar
 
     def __truediv__(self, other):
-        return Point3D(self.p / other)                  # Point / scalar
+        return Point3D(self.p / other)  # Point / scalar
 
     def rigid_transform(self, *args):
         if len(args) == 1:
