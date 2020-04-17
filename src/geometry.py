@@ -5,6 +5,16 @@ from mpl_toolkits.mplot3d import Axes3D
 from point import *
 
 
+def calc_min_dis(a, b):
+    min_dis = np.Inf
+    for p in a:
+        for q in b:
+            dis = np.linalg.norm(p, q)
+            if dis < min_dis:
+                min_dis = dis
+    return min_dis
+
+
 def sum_to_n(n):
     return (1 + n) * n // 2
 
@@ -158,7 +168,8 @@ def get_first_order(s2, table):
     s1[0] = np.sqrt(s2[0])
     for i in range(1, n):
         s1[i] = s2[i] / s1[0]
-    check_s1(s1, s2)
+    if check_s1(s1, s2):
+        print("Warning: no solution")
     return s1
 
 
@@ -232,7 +243,6 @@ def solve_re_linearization(M, s_dim):
         p = permu_list[i]
         L[i, :] = trans_mat2vec(get_coefs(M, p[0], p[1], p[2], p[3]))
     u, z, v = np.linalg.svd(L)
-    print(z)
     S2 = v[-1, :]
     S1 = get_first_order(S2, get_idx_table(n))
     return S1

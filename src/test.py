@@ -6,25 +6,28 @@ from camera import *
 from geometry import *
 import visualize as vis
 import epnp
+import map
+import frame
 
 
-def generate_cube_points(axis, theta, o=(0., 0., 0.), edge_width=1):
-    R = rodriguez(axis, theta)
-    ex = np.array((1., 0., 0.))
-    ey = np.array((0., 1., 1.))
-    ex = np.matmul(R, ex)
-    ey = np.matmul(R, ey)
-    ez = np.cross(ex, ey)
-    edge_half = edge_width / 2.0
-    p0 = Point3D(o) + (ex * edge_half - ey * edge_half - ez * edge_half)
-    p1 = p0 + ex * edge_width
-    p2 = p1 + ey * edge_width
-    p3 = p2 - ex * edge_width
-    p4 = p0 + ez * edge_width
-    p5 = p4 + ex * edge_width
-    p6 = p5 + ey * edge_width
-    p7 = p6 - ex * edge_width
-    return [p0, p1, p2, p3, p4, p5, p6, p7]
+def set_axis_limit(ax, low, high, zlow=-10, zhigh=10):
+    ax.set_xlim([low, high])
+    ax.set_ylim([low, high])
+    ax.set_zlim([zlow, zhigh])
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
+
+def generate_sphere_points(num, o=Point3D((0, 0, 0)), r=1):
+    alpha = np.random.uniform(0.0, np.pi * 2, (num,))
+    theta = np.random.uniform(0.0, np.pi * 2, (num,))
+    plist = []
+    for i in range(num):
+        x = r * np.cos(theta[i]) * np.cos(alpha[i])
+        y = r * np.cos(theta[i]) * np.sin(alpha[i])
+        z = r * np.sin(theta[i])
+        plist.append(o + (x, y, z))
+    return plist
 
 
 def generate_rand_points(num=1, loc=[0, 0, 0], scale=[1, 1, 1]):
@@ -38,24 +41,20 @@ def generate_rand_points(num=1, loc=[0, 0, 0], scale=[1, 1, 1]):
 
 
 def generate_training_data():
-    axis = [-1.0, -1.0, 1.0]
-    theta = np.pi * 0.6
-    R = rodriguez(axis, theta)
-    t = np.array([5, 5, 10])
-    print("R = \n", R)
-    print("t = \n", t)
     plt.figure()
     ax = plt.gca(projection='3d')
 
     # two cameras with different views
     camera1 = PinHoleCamera()
-    camera2 = PinHoleCamera(R, t)
+    camera2 = PinHoleCamera.place_a_camera((0, 0, 20), (0, 0, -1), (0, 1, 0))
+    print("R = \n", camera2.R)
+    print("t = \n", camera2.t)
     camera1.show(ax)
     camera2.show(ax)
     print("E = \n", camera2.get_essential_mat())
 
-    p = generate_rand_points(20, [0, 0, 9], [3, 3, 3])
-    # p = generate_cube_points((1., 1., 1.), 0 * np.pi / 2, Point3D((0., 0., 25)), 10)
+    p = generate_rand_points(20, [0, 0, 9], [5, 5, 5])
+    # p = generate_sphere_points(25, Point3D((0, 0, 10)), 5)
     # p = [Point3D((3, 6, 10))]
     p2d1, p3d1 = camera1.project_world2image(p)
     p2d2, p3d2 = camera2.project_world2image(p)
@@ -75,27 +74,16 @@ def generate_training_data():
     save_points_to_file(p3d2, "../Data/p3d2.dat")
     save_points_to_file(p, "../Data/pw.dat")
 
-    lim_low = -5
-    lim_high = 10
-    ax.set_xlim([lim_low, lim_high])
-    ax.set_ylim([lim_low, lim_high])
-    ax.set_zlim([lim_low, lim_high])
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
+    set_axis_limit(-10, 10)
 
 
 def check_camera_position():
-    plt.figure()
     ax = plt.gca(projection='3d')
-
     data_type = np.float64
     p2d1 = np.fromfile("../Data/p2d1.dat", np.float64).reshape((-1, 2))
     p2d2 = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
     R = np.fromfile("../Data/R.dat", data_type).reshape((3, 3))
     t = np.fromfile("../Data/t.dat", data_type)
-    print(R)
-    print(t)
 
     camera1 = PinHoleCamera()
     camera2 = PinHoleCamera(R, t)
@@ -112,14 +100,7 @@ def check_camera_position():
         ax.plot3D([c1.x, p3d1[i].x], [c1.y, p3d1[i].y], [c1.z, p3d1[i].z], linestyle='--', color='red', linewidth=1)
         ax.plot3D([c2.x, p3d2[i].x], [c2.y, p3d2[i].y], [c2.z, p3d2[i].z], linestyle='--', color='blue', linewidth=1)
 
-    lim_low = -5
-    lim_high = 10
-    ax.set_xlim([lim_low, lim_high])
-    ax.set_ylim([lim_low, lim_high])
-    ax.set_zlim([lim_low, lim_high])
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
+    set_axis_limit(ax, -10, 10)
 
 
 def test_visualizer():
@@ -136,17 +117,24 @@ def test_visualizer():
 
 
 def test_pnp():
+    f = 1.05
     pi = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
-    # pi += np.random.normal(0.0, 5, pi.shape)
-    pc = read_points_from_file("../Data/p3d2.dat")
-    pw = read_points_from_file("../Data/pw.dat")
-    print(list2mat(pw))
-    camera = PinHoleCamera()
-    epnp.estimate_pose_epnp(camera.K, pw, pi, 4)
+    pi += np.random.normal(0.0, 15, pi.shape)
+    pw = list2mat(read_points_from_file("../Data/pw.dat"))
+    pw += np.random.normal(0.0, 0.0, pw.shape)
+    pw = mat2list(pw)
+
+    camera = PinHoleCamera(f=f)
+    # epnp.estimate_pose_epnp(camera.K, pw, pi, 4)
+    R, t, pw, pi = epnp.ransac_estimate_pose(camera.K, pw, pi, iter=10, threshold=50)
+    R.tofile("../Data/R.dat")
+    t.tofile("../Data/t.dat")
+    print(len(pw))
 
 
 def test_back_end():
     f = 1.05
+    t_norm = 20
     pi1 = np.fromfile("../Data/p2d1.dat", np.float64).reshape((-1, 2))
     pi2 = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
     pi1 += np.random.normal(0.0, 15, pi1.shape)
@@ -157,19 +145,27 @@ def test_back_end():
     camera1 = PinHoleCamera(f=f)
     pc1 = camera1.project_image2camera(pi1)
     pc2 = camera1.project_image2camera(pi2)
-    E = get_null_space_ransac(list2mat(pc1), list2mat(pc2), max_iter=40)
+    E = get_null_space_ransac(list2mat(pc1), list2mat(pc2), max_iter=20)
     R_list, t_list = decompose_essential_mat(E)
     R, t = check_validation_rt(R_list, t_list, pc1, pc2)
-    t *= 15
+    t *= t_norm
 
     err = []
-    for i in range(30):
+    s = 0.15
+    plt.figure()
+    for i in range(50):
         camera2 = PinHoleCamera(f=f, R=R, t=t)
-        pw, _, _ = camera_triangulation(camera1, camera2, pi1, pi2)
+        _, pw1, pw2 = camera_triangulation(camera1, camera2, pi1, pi2)
+        pw = [p * s + q * (1 - s) for p, q in zip(pw1, pw2)]
         err.append(camera1.calc_projection_error(pw, pi1) + camera2.calc_projection_error(pw, pi2))
-        R, t = epnp.estimate_pose_epnp(camera2.K, pw, pi2, 4)
+        # R, t = epnp.estimate_pose_epnp(camera2.K, pw, pi2, 4)
+        R, t, _, _ = epnp.ransac_estimate_pose(camera2.K, pw, pi2, 10, 10)
+        R.tofile("../Data/R.dat")
+        (t / np.linalg.norm(t) * t_norm).tofile("../Data/t.dat")
+        plt.clf()
+        check_camera_position()
+        plt.pause(0.001)
 
-    t = t / np.linalg.norm(t) * 15
     print(err)
     plt.figure()
     plt.stem(err)
@@ -198,10 +194,65 @@ def plot_data():
     plt.show()
 
 
+def test_sfm():
+    def filter_kps(frm, pw):
+        """
+            get the indexes of key points which can be seen in frame
+            frame: the current frame
+        """
+        kps = []
+        pi, pc = frm.cam.project_world2image(pw)
+        for i in range(len(pw)):
+            if not frm.cam.is_out_of_bound(pi[i, :]):
+                frm.kps_idx.append(i)
+
+        n = len(frm.kps_idx)
+        frm.pi = np.zeros((n, 2))
+        for i in range(n):
+            frm.pi[i, :] = pi[frm.kps_idx[i], :]
+
+    def generate_data():
+        plt.figure()
+        ax = plt.gca(projection='3d')
+        f = 1.05
+        cam1 = PinHoleCamera(f=f)
+        cam2 = PinHoleCamera.place_a_camera((10, 10, 10), (-1, -1, 0), (1, 0, 0), f=f)
+        cam3 = PinHoleCamera.place_a_camera((-10, -10, 10), (1, 1, 0), (1, 0, 1), f=f)
+
+        pw = generate_sphere_points(25, Point3D((0, 0, 20)), 10)
+        frm1 = frame.Frame(cam1)
+        frm2 = frame.Frame(cam2)
+        frm3 = frame.Frame(cam3)
+        kps1 = filter_kps(frm1, pw)
+        kps2 = filter_kps(frm2, pw)
+        kps3 = filter_kps(frm3, pw)
+        print(frm1.kps_idx)
+        print(frm2.kps_idx)
+        print(frm3.kps_idx)
+
+        save_points_to_file(pw, "../Data/pw.dat")
+
+        cam1.show(ax)
+        cam2.show(ax)
+        cam3.show(ax)
+        cam1.show_projection(ax, pw)
+        cam2.show_projection(ax, pw)
+        cam3.show_projection(ax, pw)
+        set_axis_limit(ax, -20, 20, -10, 20)
+        return [frm1, frm2, frm3]
+
+    frames = generate_data()
+    pt_cloud = map.Map()
+    for frm in frames:
+        pt_cloud.add_frame(frm)
+
+
 if __name__ == "__main__":
     # plot_data()
-    generate_training_data()
-    test_back_end()
-    check_camera_position()
+    # generate_training_data()
+    # test_pnp()
+    test_sfm()
+    # test_back_end()
+    # check_camera_position()
     # test_visualizer()
     plt.show()

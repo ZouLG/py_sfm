@@ -2,26 +2,28 @@ import key_point as kp
 import camera
 from point import *
 import cv2
+import numpy as np
+import geometry as geo
 from matplotlib import pyplot as plt
 
 
 class Frame:
-    def __init__(self, pi):
+    def __init__(self, cam):
         """
             pi: 2d image coordinates of matched key points
             kps_idx: index of key points in the PointCloud list
             camera: pin-hole camera model
         """
-        self.pi = pi
+        self.pi = None
+        self.cam = cam
         self.kps_idx = []
-        self.camera = camera.PinHoleCamera()
 
     @staticmethod
     def detect_kps(img, detector):
         kps, des = detector.detectAndCompute(img, None)
         kps_list = []
         for p, d in zip(kps, des):
-            kps_list.append(kp.KeyPoint(p, d))
+            kps_list.append(kp.KeyPoint(p, [d]))
         return kps_list
 
     @staticmethod
@@ -31,14 +33,32 @@ class Frame:
         plt.imshow(draw_img)
 
     @classmethod
-    def match_kps(self, pt_cloud, kps_list, matcher):
+    def bf_match_kps(self, pt_cloud, frm_kps, threshold=300):
         """
             match current frame's kps with pts in the point cloud
             pt_cloud: a PointCloud
             kps_list: kps of the match frame
-            matcher: matcher
         """
-        pass
+        assert self.pi.shape[0] == len(frm_kps)
+
+        pt_cloud.frame_list.append(self)
+        for p in frm_kps:
+            i = 0
+            dis_knn = [np.Inf, np.Inf]
+            idx = 0
+            for q in pt_cloud.kps_list:
+                dis = geo.calc_min_dis(p.des, q.des)
+                if dis < dis_knn[0]:
+                    dis_knn[1] = dis_knn[0]
+                    dis_knn[0] = dis
+                    idx = i
+                elif dis < dis_knn[1]:
+                    dis_knn[1] = dis
+                i += 1
+
+            if (dis_knn[0] < threshold) and (dis_knn[0] < dis_knn[1] * 0.5):
+                pt_cloud.kps_list[idx].des.append(p.des[0])
+                self.kps_idx.append(idx)
 
 
 if __name__ == "__main__":

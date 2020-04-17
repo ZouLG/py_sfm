@@ -2,20 +2,21 @@ from point import *
 from camera import *
 import frame as frm
 import key_point as kp
+import numpy as np
 
 
 class PointCloud:
-    def __init__(self):
-        self.kps_list = []
+    def __init__(self, pw=[]):
+        self.kps_list = pw
 
     def plot_points(self):
         pass
 
 
 class Map(PointCloud):
-    def __init__(self):
+    def __init__(self, pw=[]):
+        self.kps_list = pw
         self.frame_list = []    # list of frames
-        self.frame_idx = []     # index of frames of each kp
 
     @staticmethod
     def solve_2views(frame1, frame2):
@@ -33,5 +34,7 @@ class Map(PointCloud):
         """
         pass
 
-    def add_frame(self, frame):
+    def add_frame(self, frm, frm_kps):
         pass
+
+
