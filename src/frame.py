@@ -41,12 +41,14 @@ class Frame:
         """
         assert self.pi.shape[0] == len(frm_kps)
 
+        map_size = len(pt_cloud.kps_list)
+        new_size = map_size
         pt_cloud.frame_list.append(self)
         for p in frm_kps:
-            i = 0
             dis_knn = [np.Inf, np.Inf]
-            idx = 0
-            for q in pt_cloud.kps_list:
+            idx = -1
+            for i in range(map_size):
+                q = pt_cloud.kps_list[i]
                 dis = geo.calc_min_dis(p.des, q.des)
                 if dis < dis_knn[0]:
                     dis_knn[1] = dis_knn[0]
@@ -54,11 +56,15 @@ class Frame:
                     idx = i
                 elif dis < dis_knn[1]:
                     dis_knn[1] = dis
-                i += 1
 
             if (dis_knn[0] < threshold) and (dis_knn[0] < dis_knn[1] * 0.5):
                 pt_cloud.kps_list[idx].des.append(p.des[0])
                 self.kps_idx.append(idx)
+            else:   # add this point to the map if there is no existing matching pt in the map
+                pt_cloud.kps_list.append(p)
+                self.kps_idx.append(new_size)
+                new_size += 1
+
 
 
 if __name__ == "__main__":
