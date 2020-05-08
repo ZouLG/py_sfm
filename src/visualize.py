@@ -1,34 +1,10 @@
+# import open3d
 import msvcrt
 import numpy as np
 from point import *
 from camera import *
 import geometry as geo
 from mpl_toolkits.mplot3d import Axes3D
-
-
-class ProjectionVisualizer:
-    def __init__(self, ax):
-        self.ax = ax
-        self.x_lim_low = -1
-        self.x_lim_high = 1
-        self.y_lim_low = -1
-        self.y_lim_high = 1
-        self.z_lim_low = -1
-        self.z_lim_high = 1
-        self.cameras = []
-
-    def set_lim(self, obj):
-        if isinstance(obj, list):
-            for p in p_list:
-                self.x_lim_low  = min(p.x, self.x_lim_low)
-                self.x_lim_high = max(p.x, self.x_lim_high)
-                self.y_lim_low  = min(p.y, self.y_lim_low)
-                self.y_lim_high = max(p.y, self.y_lim_high)
-                self.z_lim_low  = min(p.z, self.z_lim_low)
-                self.z_lim_high = max(p.z, self.z_lim_high)
-
-    def add_camera(self, camera):
-        self.cameras.append(camera)
 
 
 def plot_ray(ax, p, n, ishalf=True, color='red', linestype='-', linewidth=1, length=30):
@@ -47,6 +23,31 @@ def plot_ray(ax, p, n, ishalf=True, color='red', linestype='-', linewidth=1, len
         p0 = p - n_
     p1 = p + n_
     ax.plot3D([p0.x, p1.x], [p0.y, p1.y], [p0.z, p1.z], color=color, linestyle=linestype, linewidth=linewidth)
+
+
+class ProjectionVisualizer:
+    def __init__(self, ax):
+        self.ax = ax
+        self.x_lim_low = -1
+        self.x_lim_high = 1
+        self.y_lim_low = -1
+        self.y_lim_high = 1
+        self.z_lim_low = -1
+        self.z_lim_high = 1
+        self.cameras = []
+
+    def set_lim(self, obj):
+        if isinstance(obj, list):
+            for p in obj:
+                self.x_lim_low  = min(p.x, self.x_lim_low)
+                self.x_lim_high = max(p.x, self.x_lim_high)
+                self.y_lim_low  = min(p.y, self.y_lim_low)
+                self.y_lim_high = max(p.y, self.y_lim_high)
+                self.z_lim_low  = min(p.z, self.z_lim_low)
+                self.z_lim_high = max(p.z, self.z_lim_high)
+
+    def add_camera(self, camera):
+        self.cameras.append(camera)
 
 
 def test_visualizer(ax, camera1, camera2, kps1=None, kps2=None):

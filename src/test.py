@@ -7,7 +7,7 @@ from geometry import *
 import visualize as vis
 import epnp
 import map
-import frame
+from frame import Frame
 
 
 def set_axis_limit(ax, low, high, zlow=-10, zhigh=10):
@@ -74,7 +74,7 @@ def generate_training_data():
     save_points_to_file(p3d2, "../Data/p3d2.dat")
     save_points_to_file(p, "../Data/pw.dat")
 
-    set_axis_limit(-10, 10)
+    set_axis_limit(ax, -10, 10)
 
 
 def check_camera_position():
@@ -139,19 +139,19 @@ def test_back_end():
     pi2 = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
     pi1 += np.random.normal(0.0, 15, pi1.shape)
     pi2 += np.random.normal(0.0, 15, pi2.shape)
-    # pw = read_points_from_file("../Data/pw.dat")
-    # print(list2mat(pw))
 
-    camera1 = PinHoleCamera(f=f)
+    camera1 = PinHoleCamera.place_a_camera((0, 0, 0), (0, 0, 1), (0, 1, 0), f=f)
+    # camera1 = PinHoleCamera(f=f)
     pc1 = camera1.project_image2camera(pi1)
     pc2 = camera1.project_image2camera(pi2)
-    E = get_null_space_ransac(list2mat(pc1), list2mat(pc2), max_iter=20)
+    E, _ = get_null_space_ransac(list2mat(pc1), list2mat(pc2), max_iter=20)
     R_list, t_list = decompose_essential_mat(E)
     R, t = check_validation_rt(R_list, t_list, pc1, pc2)
+    R = np.matmul(R, camera1.R)
     t *= t_norm
 
     err = []
-    s = 0.15
+    s = 0.2
     plt.figure()
     for i in range(50):
         camera2 = PinHoleCamera(f=f, R=R, t=t)
@@ -159,7 +159,7 @@ def test_back_end():
         pw = [p * s + q * (1 - s) for p, q in zip(pw1, pw2)]
         err.append(camera1.calc_projection_error(pw, pi1) + camera2.calc_projection_error(pw, pi2))
         # R, t = epnp.estimate_pose_epnp(camera2.K, pw, pi2, 4)
-        R, t, _, _ = epnp.ransac_estimate_pose(camera2.K, pw, pi2, 10, 10)
+        R, t, _ = epnp.ransac_estimate_pose(camera2.K, pw, pi2, 10, 10)
         R.tofile("../Data/R.dat")
         (t / np.linalg.norm(t) * t_norm).tofile("../Data/t.dat")
         plt.clf()
@@ -195,41 +195,40 @@ def plot_data():
 
 
 def test_sfm():
-    def filter_kps(frm, pw):
-        """
-            get the indexes of key points which can be seen in frame
-            frame: the current frame
-        """
-        kps = []
-        pi, pc = frm.cam.project_world2image(pw)
-        for i in range(len(pw)):
-            if not frm.cam.is_out_of_bound(pi[i, :]):
-                frm.kps_idx.append(i)
+    def generate_frms(pi, des, cam):
+        des_filter = []
+        idx = []
+        for i in range(len(des)):
+            if not cam.is_out_of_bound(pi[i, :]):
+                idx.append(i)
+                des_filter.append(des[i])
+        return Frame(pi[idx, :], des_filter)
 
-        n = len(frm.kps_idx)
-        frm.pi = np.zeros((n, 2))
-        for i in range(n):
-            frm.pi[i, :] = pi[frm.kps_idx[i], :]
-
-    def generate_data():
-        plt.figure()
-        ax = plt.gca(projection='3d')
-        f = 1.05
+    def generate_data(ax):
+        f = 1.00
+        pw = generate_sphere_points(25, Point3D((0, 0, 20)), 10)
         cam1 = PinHoleCamera(f=f)
         cam2 = PinHoleCamera.place_a_camera((10, 10, 10), (-1, -1, 0), (1, 0, 0), f=f)
         cam3 = PinHoleCamera.place_a_camera((-10, -10, 10), (1, 1, 0), (1, 0, 1), f=f)
 
-        pw = generate_sphere_points(25, Point3D((0, 0, 20)), 10)
-        frm1 = frame.Frame(cam1)
-        frm2 = frame.Frame(cam2)
-        frm3 = frame.Frame(cam3)
-        kps1 = filter_kps(frm1, pw)
-        kps2 = filter_kps(frm2, pw)
-        kps3 = filter_kps(frm3, pw)
-        print(frm1.kps_idx)
-        print(frm2.kps_idx)
-        print(frm3.kps_idx)
+        pi1, _ = cam1.project_world2image(pw)
+        pi2, _ = cam2.project_world2image(pw)
+        pi3, _ = cam3.project_world2image(pw)
 
+        # add noise
+        des = np.random.normal(50, 20, (len(pw), 128))
+        des = des.astype(np.float32)
+        pi1 += np.random.normal(0.0, 5, pi1.shape)
+        pi2 += np.random.normal(0.0, 5, pi2.shape)
+        pi3 += np.random.normal(0.0, 5, pi3.shape)
+
+        frm1 = generate_frms(pi1, des, cam1)
+        frm2 = generate_frms(pi2, des, cam2)
+        frm3 = generate_frms(pi3, des, cam3)
+
+        print(len(frm1.des))
+        print(len(frm2.des))
+        print(len(frm3.des))
         save_points_to_file(pw, "../Data/pw.dat")
 
         cam1.show(ax)
@@ -241,10 +240,28 @@ def test_sfm():
         set_axis_limit(ax, -20, 20, -10, 20)
         return [frm1, frm2, frm3]
 
-    frames = generate_data()
+    plt.figure()
+    ax = plt.gca(projection='3d')
+    frames = generate_data(ax)
+
     pt_cloud = map.Map()
     for frm in frames:
-        pt_cloud.add_frame(frm)
+        pt_cloud.add_a_frame(frm)
+
+    plt.figure()
+    ax = plt.gca(projection='3d')
+    pt_cloud.plot_map(ax)
+    set_axis_limit(ax, -20, 20, -10, 20)
+    plt.pause(1)
+    for i in range(10):
+        pt_cloud.update_points()
+        pt_cloud.update_cam_pose()
+        plt.cla()
+        pt_cloud.plot_map(ax)
+        set_axis_limit(ax, -20, 20, -10, 20)
+        plt.pause(1)
+
+    set_axis_limit(ax, -20, 20, -10, 20)
 
 
 if __name__ == "__main__":

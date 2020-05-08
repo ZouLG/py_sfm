@@ -67,7 +67,7 @@ def update_camera_plane(camera):
 
 class PinHoleCamera:
     def __init__(self, R=np.eye(3),
-                 t=np.array((0., 0., 0.)),
+                 t=np.zeros((3,)),
                  f=1.0, sx=0.002, sy=0.002,
                  img_w=1920, img_h=1080):
         self.T = geo.homo_rotation_mat(R, t)
@@ -111,8 +111,24 @@ class PinHoleCamera:
             self.__dict__['t'] = value[0:3, 3]
             self.__dict__['R_'] = np.linalg.pinv(self.R)
             self.__dict__['T_'] = np.linalg.pinv(self.T)
+        elif key == "K":
+            self.__dict__['K'] = value
+            self.__dict__['K_'] = np.linalg.pinv(self.K)
+            self.__dict__['f'] = value[0][0] * self.sx
+            self.__dict__['img_w'] = value[0][2] * 2
+            self.__dict__['img_h'] = value[1][2] * 2
         else:
             print("Caution: Attribute %s can not be set" % (key))
+
+    @staticmethod
+    def place_a_camera(p, ez, ex, f=1.0, sx=0.002, sy=0.002, img_w=1920, img_h=1080):
+        ez /= np.linalg.norm(ez)
+        ex = ex - np.matmul(ez, ex) * ez
+        ex /= np.linalg.norm(ex)
+        ey = np.cross(ez, ex)
+        R = np.column_stack((ex, ey, ez)).T
+        t = -np.matmul(R, Point3D(p).p)
+        return PinHoleCamera(R, t, f=f, sx=sx, sy=sy, img_w=img_w, img_h=img_h)
 
     def show(self, ax, color='blue', s=20):
         o = geo.rotate3d(self.o, self.T_)
@@ -195,10 +211,7 @@ class PinHoleCamera:
         return pi, pc
 
     def is_out_of_bound(self, pi):
-        if pi[0] < 0 or pi[0] >= self.img_w or pi[1] < 0 or pi[1] >= self.img_h:
-            return True
-        else:
-            return False
+        return pi[0] < 0 or pi[0] >= self.img_w or pi[1] < 0 or pi[1] >= self.img_h
 
     def show_projection(self, ax, pw):
         pi, pc = self.project_world2image(pw)
@@ -242,142 +255,8 @@ class PinHoleCamera:
             with the real image coordinates
         """
         pi_, _ = self.project_world2image(pw)
-        err = np.linalg.norm(pi - pi_)
+        err = np.linalg.norm(pi - pi_) / len(pw)
         return err
-
-    def estimate_pose_epnp(self, pw, pi, ctrl_num=4):
-        def get_control_points(pw):
-            p0 = geo.calc_center(pw)
-            lamda, eig_v = geo.pca(list2mat(pw).T)
-            p1 = p0 + np.sqrt(lamda[0]) * eig_v[0]
-            p2 = p0 + np.sqrt(lamda[1]) * eig_v[1]
-            p3 = p0 + np.sqrt(lamda[2]) * eig_v[2]
-            # p1 = Point3D((1, 0, 0))
-            # p2 = Point3D((0, 1, 0))
-            # p3 = Point3D((0, 0, 1))
-            return p0, p1, p2, p3
-
-        def calc_barycentric(ctrl_pts, pw):
-            m = len(ctrl_pts)
-            n = len(pw)
-            base = list2mat(ctrl_pts)
-            base = np.column_stack((base, np.ones((m,))))   # sum(bc) = 1
-            base_inv = np.linalg.pinv(np.matmul(base, base.T))
-            mat_pw = np.column_stack((list2mat(pw), np.ones(n,)))
-
-            bary_coef = np.matmul(np.matmul(mat_pw, base.T), base_inv)
-            # print(list2mat(ctrl_pts).T)
-            # print(bary_coef.T)
-            # print(np.matmul(list2mat(ctrl_pts).T, bary_coef.T).T)
-            return bary_coef
-
-        def calc_dist(pw):
-            n = len(pw)
-            idx = 0
-            dist = np.zeros(geo.sum_to_n(n - 1),)
-            for i in range(n):
-                for j in range(i + 1, n):
-                    dist[idx] = np.linalg.norm(pw[i] - pw[j])
-                    idx += 1
-            return dist
-
-        def recover_Rt(pc, pw):
-            n = len(pc)
-            center_c = Point3D((0, 0, 0))
-            center_w = center_c
-            for p, q in zip(pc, pw):
-                center_c += p
-                center_w += q
-            center_c /= n
-            center_w /= n
-            mc = list2mat(pc)
-            mw = list2mat(pw)
-            mc_c = mc - np.tile(center_c.p, (n, 1))
-            mw_c = mw - np.tile(center_w.p, (n, 1))
-            R = np.matmul(np.linalg.pinv(np.matmul(mw_c.T, mw_c)), np.matmul(mw_c.T, mc_c))
-            U, Z, V = np.linalg.svd(R)
-            R = np.matmul(U, V)
-            ta = mc - np.matmul(mw, R)
-            t = np.mean(ta, axis=0)
-            return R.T, t
-
-        def calc_sign(ctrl_pc):
-            depth = np.array([p.z for p in ctrl_pc])
-            print(depth)
-            if np.sum(depth > 0.0) > len(ctrl_pc) // 2:
-                return 1
-            else:
-                return -1
-
-        def estimate_pose_n1(v, ctrl_pw):
-            ctrl_pc = []
-            for i in range(0, len(ctrl_pw)):
-                ctrl_pc.append(Point3D(v[i * 3: i * 3 + 3]))
-            dist_c = calc_dist(ctrl_pc)
-            dist_w = calc_dist(ctrl_pw)
-            scale = calc_sign(ctrl_pc) * np.matmul(dist_w, dist_c) / np.matmul(dist_c, dist_c)
-            for i in range(len(ctrl_pc)):
-                ctrl_pc[i].p = ctrl_pc[i].p * scale
-            R, t = recover_Rt(ctrl_pc, ctrl_pw)
-            return R, t
-
-        def estimate_pose_n234(v, ctrl_pw, N=2):
-            n = len(ctrl_pw)
-            V = np.split(v, n)
-            m = geo.sum_to_n(n - 1)
-            L = np.zeros((m, geo.sum_to_n(N)))
-            idx = 0
-            for i in range(n):
-                for j in range(i + 1, n):
-                    dv = V[i] - V[j]
-                    L[idx, :] = geo.trans_mat2vec(np.matmul(dv.T, dv))
-                    idx += 1
-            dist_w = calc_dist(ctrl_pw)
-            dist_w = dist_w * dist_w
-            if L.shape[0] < L.shape[1]:
-                uu, z, vv = np.linalg.svd(np.column_stack((L, -dist_w)))
-                vv = vv[-(L.shape[1] - L.shape[0] + 1):, :].T
-                a = geo.solve_re_linearization(vv, N)
-                beta2 = np.matmul(vv, a)
-                beta2 /= beta2[-1]
-                beta2 = beta2[:-1]
-            else:
-                L_pinv = np.linalg.pinv(np.matmul(L.T, L))
-                beta2 = np.matmul(L_pinv, np.matmul(L.T, dist_w))
-            beta1 = geo.get_first_order(beta2, geo.get_idx_table(N))
-            ctrl_pc = [Point3D(np.matmul(pc, beta1)) for pc in V]
-            sign = calc_sign(ctrl_pc)
-            ctrl_pc = [pc * sign for pc in ctrl_pc]
-            R, t = recover_Rt(ctrl_pc, ctrl_pw)
-            return R, t
-
-        n = len(pw)
-        ctrl_pw = get_control_points(pw)
-        bc = calc_barycentric(ctrl_pw, pw)
-        L = np.zeros((n * 2, ctrl_num * 3))
-        fu = self.K[0, 0]
-        fv = self.K[1, 1]
-        uc = self.K[0, 2]
-        vc = self.K[1, 2]
-        for i in range(n):
-            for j in range(ctrl_num):
-                L[i * 2, j * 3] = fu * bc[i, j]
-                L[i * 2, j * 3 + 2] = (uc - pi[i, 0]) * bc[i, j]
-                L[i * 2 + 1, j * 3 + 1] = fv * bc[i, j]
-                L[i * 2 + 1, j * 3 + 2] = (vc - pi[i, 1]) * bc[i, j]
-        u, z, eig_v = np.linalg.svd(L)
-        eig_v = eig_v.T
-        # print(z)
-        # M = np.matmul(L.T, L)
-        # lamda, eig_v = np.linalg.eig(M)
-        # print(lamda)
-        # R, t = estimate_pose_n1(eig_v[:, -1], ctrl_pw)
-        # R, t = estimate_pose_n234(eig_v[:, -2:], ctrl_pw)
-        # R, t = estimate_pose_n234(eig_v[:, -3:], ctrl_pw, 3)
-        # R, t = estimate_pose_n234(eig_v[:, -4:], ctrl_pw, 4)
-        print(R)
-        print(t)
-        return R, t
 
     def estimate_pose_p4p(self, pw, pi):
         def recover_Rt(pc, pw):
@@ -466,8 +345,8 @@ class PinHoleCamera:
 
 def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=100):
     """
-        x1: Nx3 matrix of camera1 points
-        x2: Nx3 matrix of camera2 points
+        x1: Nx3 matrix of camera1 points in camera-frame
+        x2: Nx3 matrix of camera2 points in camera-frame
         eps: the threshold that distinct inliers and outliers
         max_iter: num of iteration
         return: the null space matrix E
@@ -512,9 +391,7 @@ def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=100):
             inlier_best = inliers
             E_best = E
 
-    if len(inlier_best) <= 0:
-        print("Error: ransac failed")
-        exit()
+    assert len(inlier_best) > 0
 
     # iteration: use inliers to refine E matrix
     inliers = inlier_best
@@ -528,7 +405,7 @@ def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=100):
         E = project_to_essential_space(E)
         inliers = get_inliers(E, x1, x2, eps)
         print("inliers number: %d" % (len(inlier_best)))
-    return E_best
+    return E_best, inlier_best
 
 
 def decompose_essential_mat(E):
@@ -542,7 +419,9 @@ def decompose_essential_mat(E):
     # t = np.array([T[1, 2], -T[0, 2], T[0, 1]])
     R1 = np.matmul(np.matmul(U, Rz), V)
     R2 = np.matmul(np.matmul(U, Rz.T), V)
-    return [R1, R2, -R1, -R2],  [t, -t]
+    R1 = np.sign(np.linalg.det(R1)) * R1
+    R2 = np.sign(np.linalg.det(R2)) * R2
+    return [R1, R2],  [t, -t]
 
 
 def check_validation_rt(Rlist, tlist, pc1, pc2):
@@ -620,10 +499,7 @@ def test_decompose():
     print(p2d2)
     p3d1 = camera.project_image2camera(p2d1)
     p3d2 = camera.project_image2camera(p2d2)
-    E = get_null_space_ransac(list2mat(p3d1), list2mat(p3d2), eps=1e-3, max_iter=40)
-    for p1, p2 in zip(p3d1, p3d2):
-        loss = np.matmul(np.matmul(p2.p.reshape(1, -1), E), p1.p.reshape(-1, 1))
-        # print(loss)
+    E, _ = get_null_space_ransac(list2mat(p3d1), list2mat(p3d2), eps=1e-3, max_iter=40)
 
     R_list, t_list = decompose_essential_mat(E)
     R_, t_ = check_validation_rt(R_list, t_list, p3d1, p3d2)

@@ -122,6 +122,13 @@ def mat2list(mat):
     return plist
 
 
+def get_point_by_idx(points, idx):
+    if isinstance(points, list):
+        return [points[i] for i in idx]
+    else:
+        return points[idx, :]
+
+
 def save_points_to_file(plist, file_name):
     mat = list2mat(plist)
     mat.tofile(file_name)

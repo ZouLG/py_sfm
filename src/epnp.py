@@ -1,6 +1,8 @@
 from point import *
+import camera
 import geometry as geo
 import numpy as np
+import random
 
 
 def get_control_points(pw):
@@ -43,11 +45,7 @@ def calc_dist(pw):
 
 def calc_sign(ctrl_pc):
     depth = np.array([p.z for p in ctrl_pc])
-    print(depth)
-    if np.sum(depth > 0.0) > len(ctrl_pc) // 2:
-        return 1
-    else:
-        return -1
+    return np.sign(np.sum(depth > 0.0) - len(ctrl_pc) / 2)
 
 
 def estimate_pose_n1(v, ctrl_pw):
@@ -119,6 +117,65 @@ def estimate_pose_epnp(K, pw, pi, ctrl_num=4):
     # R, t = estimate_pose_n234(eig_v[:, -2:], ctrl_pw)
     # R, t = estimate_pose_n234(eig_v[:, -3:], ctrl_pw, 3)
     # R, t = estimate_pose_n234(eig_v[:, -4:], ctrl_pw, 4)
-    print(R)
-    print(t)
     return R, t
+
+
+def ransac_estimate_pose(K, pw, pi, iter=10, threshold=50):
+    """
+        estimate camera pose through epnp in ransac method
+        K: camera intrinsic param
+        pw: point coordinates in world-frame
+        pi: image key-points
+        iter: ransac times
+        return: camera pose (R, t) and inlier pw & pi
+    """
+    def get_inliers(cam, pw, pi, threshold):
+        idx = []
+        pi_, _ = cam.project_world2image(pw)
+        for i in range(len(pw)):
+            if np.linalg.norm(pi_[i, :] - pi[i, :]) < threshold:
+                idx.append(i)
+        return idx
+
+    def get_by_idx(pw, pi, index):
+        pw_new = [pw[i] for i in index]
+        pi_new = np.zeros((len(index), pi.shape[1]))
+        for i in range(len(index)):
+            pi_new[i, :] = pi[index[i], :]
+        return pw_new, pi_new
+
+    batch_num = 7
+    N = pi.shape[0]
+    assert len(pw) == N
+    assert len(pw) > batch_num
+
+    inlier_best = []
+    for i in range(iter):
+        index = random.sample(range(N), batch_num)
+        if False:   #geo.is_co_plannar(pw[index]):
+            continue
+        pw_tmp, pi_tmp = get_by_idx(pw, pi, index)
+        R, t = estimate_pose_epnp(K, pw_tmp, pi_tmp)
+        cam = camera.PinHoleCamera(R, t, f=K[0, 0] * 0.002)     # sx = 0.002
+        inliers = get_inliers(cam, pw, pi, threshold)
+        if len(inliers) > len(inlier_best):
+            inlier_best = inliers
+
+    if len(inlier_best) < 4:
+        print("Warning: not enough inliers, inlier = %d" % len(inlier_best))
+        inlier_best = list(range(len(pw)))
+
+    pw_tmp, pi_tmp = get_by_idx(pw, pi, index)
+    R_best, t_best = estimate_pose_epnp(K, pw_tmp, pi_tmp)
+
+    while True:
+        pw_tmp, pi_tmp = get_by_idx(pw, pi, inlier_best)
+        R, t = estimate_pose_epnp(K, pw_tmp, pi_tmp)
+        cam = camera.PinHoleCamera(R, t, f=K[0, 0] * 0.002)     # sx = 0.002
+        inliers = get_inliers(cam, pw, pi, threshold)
+        if len(inliers) > len(inlier_best):
+            inlier_best = inliers
+            R_best, t_best = (R, t)
+        else:
+            break
+    return R_best, t_best, inlier_best
