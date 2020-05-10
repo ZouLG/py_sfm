@@ -12,11 +12,11 @@ class Map():
         self.best_match = []
         self.detector = cv2.xfeatures2d_SIFT.create()
         self.scale = 10
+        self.pj_err_th = 40
+        self.total_err = 0
 
     def get_corresponding_matches(self, ref, mat):
-        idx0 = []
-        idx1 = []
-        idx2 = []
+        idx0, idx1, idx2 = [], [], []
         for i in range(len(mat.kps_idx)):
             k = mat.kps_idx[i]
             j = binary_search(ref.kps_idx, k)
@@ -24,7 +24,6 @@ class Map():
                 idx0.append(k)
                 idx1.append(j)
                 idx2.append(i)
-
         pi0 = get_point_by_idx(ref.pi, idx1)
         pi1 = get_point_by_idx(mat.pi, idx2)
         return pi0, pi1, idx0
@@ -38,42 +37,43 @@ class Map():
                 pw.append(self.pw[frm.kps_idx[i]])
         return pw, frm.pi[idx, :]
 
-    def get_exif(self):
-        pass
+    def bundle_adjust_with_2frms(self, ref, mat, t_scale, iter=20):
+        if ref.status is False:
+            return False
+        pi0, pi1, idx = self.get_corresponding_matches(ref, mat)
+        pc0 = ref.cam.project_image2camera(pi0)
+        pc1 = mat.cam.project_image2camera(pi1)
+        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), max_iter=10)
+        R_list, t_list = decompose_essential_mat(E)
+        R, t = check_validation_rt(R_list, t_list, pc0, pc1)
+        mat.cam.R = np.matmul(ref.cam.R, R)
+        mat.cam.t = np.matmul(ref.cam.R, t)
+        mat.cam.t = mat.cam.t / np.linalg.norm(mat.cam.t) * t_scale
+        _, pw, _ = camera_triangulation(ref.cam, mat.cam, pi0, pi1)
+        err_min = ref.cam.calc_projection_error(pw, pi0) + mat.cam.calc_projection_error(pw, pi1)
+        pw_best = pw
 
-    def bundle_adjust_with_2frms(self, ref, mat, iter=20):
-        # get corresponding kps of the 2 frames
-        i, j = 0, 0
-        idx0, idx1 = [], []     # local index in a frame
-        while i < len(ref.kps_idx) and j < len(mat.kps_idx):
-            if ref.kps_idx[i] < mat.kps_idx[j]:
-                i += 1
-            elif ref.kps_idx[i] > mat.kps_idx[j]:
-                j += 1
-            else:
-                idx0.append(i)
-                idx1.append(j)
-                i += 1
-                j += 1
-        pi0 = ref.pi[idx0, :]
-        pi1 = mat.pi[idx1, :]
-
-        ratio = 0.5
+        ratio = 0.8
         for i in range(iter):
-            _, pw1, pw2 = camera_triangulation(ref.cam, mat.cam, pi0, pi1)
-            pw = [p * ratio + q * (1 - ratio) for p, q in zip(pw1, pw2)]
-            R0, t0, _ = epnp.ransac_estimate_pose(ref.cam.K, pw, pi0, 10, 10)
-            R1, t1, _ = epnp.ransac_estimate_pose(mat.cam.K, pw, pi1, 10, 10)
-            ref.cam.R = R0
-            ref.cam.t = t0
-            mat.cam.R = R1
-            mat.cam.t = t1
-            for j in range(len(idx0)):
-                q = self.pw[ref.kps_idx[idx0[j]]]
-                if q is not None:
-                    self.pw[ref.kps_idx[j]] = q * ratio + pw[j] * (1 - ratio)
-                else:
-                    self.pw[ref.kps_idx[j]] = pw[j]
+            R, t = epnp.estimate_pose_epnp(mat.cam.K, pw, pi1)
+            cam_tmp = PinHoleCamera(R, t, mat.cam.f)
+            _, pw0, pw1 = camera_triangulation(ref.cam, cam_tmp, pi0, pi1)
+            pw = [p * ratio + q * (1 - ratio) for p, q in zip(pw0, pw1)]
+            err = ref.cam.calc_projection_error(pw, pi0) + mat.cam.calc_projection_error(pw, pi1)
+            if err < err_min:
+                err_min = err
+                mat.cam = cam_tmp
+                pw_best = pw
+
+        if err_min > self.pj_err_th:
+            print("Warning: projecting error is too big! frame skipped")
+            mat.status = False
+            return False
+        else:
+            for k, i in enumerate(idx):
+                self.pw[i] = pw_best[k]
+            mat.status = True
+            return True
 
     def add_a_frame(self, frm, *args):
         # detect & match kps of the frm with the map
@@ -89,6 +89,7 @@ class Map():
             frm.kps_idx = list(range(len(frm.des)))
             frm.cam.R = np.eye(3)
             frm.cam.t = np.zeros((3, ))
+            frm.status = True
             return
 
         # match new frame with all old frames to register each key point
@@ -116,19 +117,20 @@ class Map():
 
         # estimate pose of the frame
         pw, pi = self.get_epnp_points(frm)
-        if len(pw) < 8:
+        if len(pw) > 8:
+            # frm.cam.R, frm.cam.t, inliers = epnp.ransac_estimate_pose(frm.cam.K, pw, pi)
+            frm.cam.R, frm.cam.t = epnp.estimate_pose_epnp(frm.cam.K, pw, pi)
+            err = frm.cam.calc_projection_error(pw, pi)
+            if err > self.pj_err_th:      # set loose threshold
+                print("Warning: projecting error is too big! frame skipped")
+                frm.status = False
+            else:
+                frm.status = True
+                frm.pj_err = err
+        else:
             if self.best_match[-1][1] > 12:
                 ref = self.frames[self.best_match[-1][0]]
-                pw_, idx_ = frm.estimate_pose_and_points(ref)
-                if len(pw_) == 0:
-                    return
-
-                for i in range(len(idx_)):
-                    k = frm.kps_idx[idx_[i]]
-                    self.pw[k] = pw_[i]
-                # self.bundle_adjust_with_2frms(frm, ref)
-        else:
-            frm.cam.R, frm.cam.t, inliers = epnp.ransac_estimate_pose(frm.cam.K, pw, pi)
+                self.bundle_adjust_with_2frms(ref, frm, self.scale, iter=15)
 
         self.frames.append(frm)
         return
@@ -146,18 +148,43 @@ class Map():
 
     def update_points(self):
         frm_num = len(self.frames)
-        for i in range(frm_num - 1):
-            frm1 = self.frames[i]
-            for j in range(i + 1, len(self.frames)):
-                frm2 = self.frames[j]
-                self.triangulate_2frms(frm1, frm2)
+        for i in range(0, frm_num - 1):
+            ref = self.frames[i]
+            for j in range(i + 1, frm_num):
+                mat = self.frames[j]
+                if ref.status is False or mat.status is False:
+                    continue
+                self.triangulate_2frms(ref, mat)
 
     def update_cam_pose(self):
         for frm in self.frames:
             pw, pi = self.get_epnp_points(frm)
-            R, t = epnp.estimate_pose_epnp(frm.cam.K, pw, pi)
-            frm.cam.R = R
-            frm.cam.t = t
+            if len(pw) < 5:
+                # frm.status = False
+                continue
+            frm.cam.R, frm.cam.t = epnp.estimate_pose_epnp(frm.cam.K, pw, pi)
+            err = frm.cam.calc_projection_error(pw, pi)
+            if err < self.pj_err_th:
+                frm.status = True
+                frm.pj_err = err
+            else:
+                print("Warning: projecting error is too big! frame skipped")
+                # frm.status = False
+
+    def reset_scale(self):
+        """
+            set the scale of the first best matching frame pair to self.scale and adjust the whole map
+        """
+        pass
+
+    def calc_projecting_err(self):
+        self.total_err = 0
+        frm_num = 0
+        for frm in self.frames:
+            if frm.status is True:
+                self.total_err += frm.pj_err
+                frm_num += 1
+        self.total_err /= (frm_num or 1)
 
     def plot_map(self, ax):
         for p in self.pw:
@@ -165,4 +192,5 @@ class Map():
                 p.plot3d(ax, marker='.', color='blue', s=10)
 
         for frm in self.frames:
-            frm.cam.show(ax)
+            if frm.status is True:
+                frm.cam.show(ax)

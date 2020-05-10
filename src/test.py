@@ -206,62 +206,70 @@ def test_sfm():
 
     def generate_data(ax):
         f = 1.00
-        pw = generate_sphere_points(25, Point3D((0, 0, 20)), 10)
-        cam1 = PinHoleCamera(f=f)
-        cam2 = PinHoleCamera.place_a_camera((10, 10, 10), (-1, -1, 0), (1, 0, 0), f=f)
-        cam3 = PinHoleCamera.place_a_camera((-10, -10, 10), (1, 1, 0), (1, 0, 1), f=f)
-
-        pi1, _ = cam1.project_world2image(pw)
-        pi2, _ = cam2.project_world2image(pw)
-        pi3, _ = cam3.project_world2image(pw)
-
-        # add noise
-        des = np.random.normal(50, 20, (len(pw), 128))
+        noise_sigma = 8
+        # pw = generate_rand_points(100, [0, 0, 0], [10, 10, 10])
+        pw = generate_sphere_points(100, Point3D((0, 0, 0)), 20)
+        des = np.random.uniform(0, 128, (len(pw), 128))
         des = des.astype(np.float32)
-        pi1 += np.random.normal(0.0, 5, pi1.shape)
-        pi2 += np.random.normal(0.0, 5, pi2.shape)
-        pi3 += np.random.normal(0.0, 5, pi3.shape)
 
-        frm1 = generate_frms(pi1, des, cam1)
-        frm2 = generate_frms(pi2, des, cam2)
-        frm3 = generate_frms(pi3, des, cam3)
+        # generate frames
+        cams, pi = [], []
+        theta = np.linspace(0.0, np.pi * 1.7, 7)
+        center = 15 * np.column_stack((np.zeros(theta.shape), np.cos(theta), np.sin(theta)))
+        for i in range(theta.shape[0]):
+            cams.append(PinHoleCamera.place_a_camera(center[i, :], -center[i, :], (1, 0, 0), f=f))
+            pi_, _ = cams[i].project_world2image(pw)
+            pi.append(pi_ + np.random.normal(0.0, noise_sigma, pi_.shape))  # add noise
 
-        print(len(frm1.des))
-        print(len(frm2.des))
-        print(len(frm3.des))
+        frms = []
+        for i, c in enumerate(cams):
+            frms.append(generate_frms(pi[i], des, cams[i]))
+            print(len(frms[i].des))
+
         save_points_to_file(pw, "../Data/pw.dat")
 
-        cam1.show(ax)
-        cam2.show(ax)
-        cam3.show(ax)
-        cam1.show_projection(ax, pw)
-        cam2.show_projection(ax, pw)
-        cam3.show_projection(ax, pw)
+        # show cameras & key points
+        for c in cams:
+            c.show(ax)
+            # c.show_projection(ax, pw)
+        for p in pw:
+            p.plot3d(ax, marker='.', s=10)
         set_axis_limit(ax, -20, 20, -10, 20)
-        return [frm1, frm2, frm3]
+        return frms
 
+    # --------- test sfm start ----------
     plt.figure()
     ax = plt.gca(projection='3d')
     frames = generate_data(ax)
 
-    pt_cloud = map.Map()
-    for frm in frames:
-        pt_cloud.add_a_frame(frm)
-
     plt.figure()
     ax = plt.gca(projection='3d')
-    pt_cloud.plot_map(ax)
-    set_axis_limit(ax, -20, 20, -10, 20)
-    plt.pause(1)
-    for i in range(10):
-        pt_cloud.update_points()
-        pt_cloud.update_cam_pose()
+    pt_cloud = map.Map()
+    for k, frm in enumerate(frames):
+        pt_cloud.add_a_frame(frm)
+        for i in range(k * 5):
+            pt_cloud.update_points()
+            pt_cloud.update_cam_pose()
+
         plt.cla()
         pt_cloud.plot_map(ax)
-        set_axis_limit(ax, -20, 20, -10, 20)
-        plt.pause(1)
+        set_axis_limit(ax, -20, 20, -10, 30)
+        plt.pause(0.001)
 
-    set_axis_limit(ax, -20, 20, -10, 20)
+    print("best matches =\n", pt_cloud.best_match)
+    plt.figure()
+    ax = plt.gca(projection='3d')
+    print("start optimization...")
+    for i in range(30):
+        pt_cloud.update_points()
+        pt_cloud.update_cam_pose()
+        pt_cloud.calc_projecting_err()
+        print(pt_cloud.total_err)
+        plt.cla()
+        pt_cloud.plot_map(ax)
+        set_axis_limit(ax, -20, 20, 0, 40)
+        plt.pause(0.001)
+    print("sfm task finished")
 
 
 if __name__ == "__main__":

@@ -404,7 +404,6 @@ def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=100):
         E = solve_ls_fitting(x1, x2, inlier_best)
         E = project_to_essential_space(E)
         inliers = get_inliers(E, x1, x2, eps)
-        print("inliers number: %d" % (len(inlier_best)))
     return E_best, inlier_best
 
 
@@ -456,7 +455,6 @@ def check_validation_rt(Rlist, tlist, pc1, pc2):
                 th = inliers[i][j]
                 iopt = i
                 jopt = j
-    print(inliers)
     return Rlist[jopt], tlist[iopt]
 
 

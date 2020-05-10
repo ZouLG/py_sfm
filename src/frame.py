@@ -1,10 +1,9 @@
 from camera import *
 import cv2
 import numpy as np
-import epnp
-import geometry as geo
 from matplotlib import pyplot as plt
 from utils import *
+import exifread
 
 
 class Frame:
@@ -25,8 +24,9 @@ class Frame:
         self.des = des
 
         self.kps_idx = [None] * len(des)
-        self.pw = [None] * len(des)
         self.cam = PinHoleCamera(R, t, f=f)
+        self.status = False
+        self.pj_err = 0
 
     @staticmethod
     def detect_kps(img, detector):
@@ -50,10 +50,10 @@ class Frame:
         """
         if len(des1) == 0 or len(des2) == 0:
             return [], []
-        # index_params = dict(algorithm=0, trees=5)
-        # search_params = dict(checks=50)
-        # matcher = cv2.FlannBasedMatcher(index_params, search_params)
-        matcher = cv2.BFMatcher()
+        index_params = dict(algorithm=0, trees=5)
+        search_params = dict(checks=50)
+        matcher = cv2.FlannBasedMatcher(index_params, search_params)
+        # matcher = cv2.BFMatcher()
         matches = matcher.knnMatch(des1, des2, k=2)
         idx0 = []
         idx1 = []
@@ -64,8 +64,33 @@ class Frame:
         return idx0, idx1
 
     @staticmethod
-    def get_focus_len_by_exif(exif):
-        pass
+    def get_exif_info(jpg_path):
+        def get_data_with_tag(exif_data, tag):
+            if tag in ['EXIF FocalLength', 'EXIF ExifImageWidth', 'EXIF ExifImageLength']:
+                return exif_data[tag].values[0]
+            elif tag in ['EXIF FocalPlaneXResolution', 'EXIF FocalPlaneYResolution']:
+                ratio = exif_data[tag].values[0]
+                return ratio.num / ratio.den
+            elif tag in ['EXIF FocalPlaneResolutionUnit']:
+                if exif_data[tag].values[0] == 2:
+                    return 25.4     # 1 inch = 25.4 mm
+                elif exif_data[tag].values[0] == 3:
+                    return 10
+                elif exif_data[tag].values[0] == 4:
+                    return 1
+            return None
+
+        fobj = open(jpg_path, 'rb')
+        exif_data = exifread.process_file(fobj)
+        f = get_data_with_tag(exif_data, 'EXIF FocalLength')
+        sx = get_data_with_tag(exif_data, 'EXIF FocalPlaneXResolution')
+        sy = get_data_with_tag(exif_data, 'EXIF FocalPlaneYResolution')
+        xy_unit = get_data_with_tag(exif_data, 'EXIF FocalPlaneResolutionUnit')
+        sx *= xy_unit
+        sy *= xy_unit
+        img_w = get_data_with_tag(exif_data, 'EXIF ExifImageWidth')
+        img_h = get_data_with_tag(exif_data, 'EXIF ExifImageLength')
+        return [f, sx, sy, img_w, img_h]
 
     def sort_kps_by_idx(self):
         """
@@ -74,6 +99,7 @@ class Frame:
         idx = np.array(self.kps_idx).argsort()
         self.pi = self.pi[idx, :]
         self.des = list(np.array(self.des)[idx])
+        self.kps_idx = sorted(self.kps_idx)
 
     @staticmethod
     def ransac_estimate_pose(pi1, pi2, cam1, cam2):
@@ -144,5 +170,6 @@ def test_matcher():
 
 
 if __name__ == "__main__":
-    matches = test_matcher()
-
+    # matches = test_matcher()
+    data = Frame.get_exif_info(r"F:\zoulugeng\program\python\01.SLAM\Data\data_qinghuamen\image data\IMG_5589.jpg")
+    print(data)
