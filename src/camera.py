@@ -5,6 +5,23 @@ import geometry as geo
 import cv2
 
 
+def point_project2line(o, n, p):
+    delt = p - o
+    t = np.matmul(delt, n) / np.matmul(n, n)
+    return o + t * n
+
+
+def bundle_projection(camera, pw, pi):
+    pc = camera.project_image2camera(pi)
+    pcw = camera.project_camera2world(pc)
+    c = camera.get_camera_center()
+    pw_new = []
+    for q, p in zip(pcw, pw):
+        n = q - c
+        pw_new.append(point_project2line(c, n, p))
+    return pw_new
+
+
 def triangulation(n1, n2, p1, p2):
     delt = p2 - p1
     N1 = np.matmul(n1, n1) * np.eye(3) - np.matmul(n1.reshape(3, 1), n1.reshape((1, 3)))
@@ -12,12 +29,16 @@ def triangulation(n1, n2, p1, p2):
     a2 = geo.quadratic_form(n2, N1, delt)
     b2 = geo.quadratic_form(n2, N1, n2)
     t2 = -a2 / b2
+    if t2 < 0:
+        t2 = 1
     v2 = t2 * n2
     P2 = Point3D(p2 + v2)
 
     a1 = geo.quadratic_form(n1, N2, -delt)
     b1 = geo.quadratic_form(n1, N2, n1)
     t1 = -a1 / b1
+    if t1 < 0:
+        t1 = 1
     v1 = t1 * n1
     P1 = Point3D(p1 + v1)
     P = (P1 + P2) / 2

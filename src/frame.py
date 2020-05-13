@@ -26,7 +26,7 @@ class Frame:
         self.kps_idx = [None] * len(des)
         self.cam = PinHoleCamera(R, t, f=f)
         self.status = False
-        self.pj_err = 0
+        self.pj_err = np.Inf
 
     @staticmethod
     def detect_kps(img, detector):
@@ -43,7 +43,7 @@ class Frame:
         plt.imshow(draw_img)
 
     @staticmethod
-    def flann_match_kps(des1, des2):
+    def flann_match_kps(des1, des2, knn_ratio=0.5):
         """
             match current frame's kps with pts in the point cloud
             kps_list: kps of the match frame
@@ -58,7 +58,7 @@ class Frame:
         idx0 = []
         idx1 = []
         for match in matches:
-            if match[0].distance < match[1].distance * 0.7:
+            if match[0].distance < match[1].distance * knn_ratio:
                 idx0.append(match[0].queryIdx)
                 idx1.append(match[0].trainIdx)
         return idx0, idx1
@@ -66,9 +66,9 @@ class Frame:
     @staticmethod
     def get_exif_info(jpg_path):
         def get_data_with_tag(exif_data, tag):
-            if tag in ['EXIF FocalLength', 'EXIF ExifImageWidth', 'EXIF ExifImageLength']:
+            if tag in ['EXIF ExifImageWidth', 'EXIF ExifImageLength']:
                 return exif_data[tag].values[0]
-            elif tag in ['EXIF FocalPlaneXResolution', 'EXIF FocalPlaneYResolution']:
+            elif tag in ['EXIF FocalLength', 'EXIF FocalPlaneXResolution', 'EXIF FocalPlaneYResolution']:
                 ratio = exif_data[tag].values[0]
                 return ratio.num / ratio.den
             elif tag in ['EXIF FocalPlaneResolutionUnit']:
@@ -83,11 +83,11 @@ class Frame:
         fobj = open(jpg_path, 'rb')
         exif_data = exifread.process_file(fobj)
         f = get_data_with_tag(exif_data, 'EXIF FocalLength')
-        sx = get_data_with_tag(exif_data, 'EXIF FocalPlaneXResolution')
-        sy = get_data_with_tag(exif_data, 'EXIF FocalPlaneYResolution')
+        nx = get_data_with_tag(exif_data, 'EXIF FocalPlaneXResolution')
+        ny = get_data_with_tag(exif_data, 'EXIF FocalPlaneYResolution')
         xy_unit = get_data_with_tag(exif_data, 'EXIF FocalPlaneResolutionUnit')
-        sx *= xy_unit
-        sy *= xy_unit
+        sx = xy_unit / nx
+        sy = xy_unit / ny
         img_w = get_data_with_tag(exif_data, 'EXIF ExifImageWidth')
         img_h = get_data_with_tag(exif_data, 'EXIF ExifImageLength')
         return [f, sx, sy, img_w, img_h]
@@ -111,7 +111,6 @@ class Frame:
         except:
             print("Warning: there are not enough matching points")
             return None, None, []
-
         R_list, t_list = decompose_essential_mat(E)
         R, t = check_validation_rt(R_list, t_list, pc1, pc2)
         return R, t, inliers
@@ -144,12 +143,12 @@ class Frame:
 
 
 def test_matcher():
-    imPath1 = r"..\Data\data_qinghuamen\image data\IMG_5602.jpg"
-    imPath2 = r"..\Data\data_qinghuamen\image data\IMG_5603.jpg"
+    imPath1 = r"..\Data\data_qinghuamen\image data\IMG_5589.jpg"
+    imPath2 = r"..\Data\data_qinghuamen\image data\IMG_5590.jpg"
     color1 = cv2.imread(imPath1)
     color2 = cv2.imread(imPath2)
     imshape = color1.shape
-    scale = 8
+    scale = 4
     gray1 = cv2.resize(cv2.cvtColor(color1, cv2.COLOR_RGB2GRAY), (imshape[1] // scale, imshape[0] // scale))
     gray2 = cv2.resize(cv2.cvtColor(color2, cv2.COLOR_RGB2GRAY), (imshape[1] // scale, imshape[0] // scale))
     sift = cv2.xfeatures2d_SIFT.create()
@@ -170,6 +169,8 @@ def test_matcher():
 
 
 if __name__ == "__main__":
-    # matches = test_matcher()
-    data = Frame.get_exif_info(r"F:\zoulugeng\program\python\01.SLAM\Data\data_qinghuamen\image data\IMG_5589.jpg")
-    print(data)
+    matches = test_matcher()
+    # jpg_path = r"F:\zoulugeng\program\python\01.SLAM\Data\data_qinghuamen\image data\IMG_5589.jpg"
+    # exif_data = Frame.get_exif_info(jpg_path)
+    # img_data = cv2.imread(jpg_path)
+    # print(img_data.shape)

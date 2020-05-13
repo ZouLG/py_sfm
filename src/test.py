@@ -195,35 +195,35 @@ def plot_data():
 
 
 def test_sfm():
-    def generate_frms(pi, des, cam):
+    def generate_frms(pi, pc, des, cam):
         des_filter = []
         idx = []
         for i in range(len(des)):
-            if not cam.is_out_of_bound(pi[i, :]):
+            if not cam.is_out_of_bound(pi[i, :]) and pc[i].z > 0:
                 idx.append(i)
                 des_filter.append(des[i])
         return Frame(pi[idx, :], des_filter)
 
     def generate_data(ax):
-        f = 1.00
-        noise_sigma = 8
+        f = 1.05
+        noise_sigma = 7
         # pw = generate_rand_points(100, [0, 0, 0], [10, 10, 10])
         pw = generate_sphere_points(100, Point3D((0, 0, 0)), 20)
         des = np.random.uniform(0, 128, (len(pw), 128))
         des = des.astype(np.float32)
 
         # generate frames
-        cams, pi = [], []
+        cams, pi, frms = [], [], []
         theta = np.linspace(0.0, np.pi * 1.7, 7)
         center = 15 * np.column_stack((np.zeros(theta.shape), np.cos(theta), np.sin(theta)))
-        for i in range(theta.shape[0]):
-            cams.append(PinHoleCamera.place_a_camera(center[i, :], -center[i, :], (1, 0, 0), f=f))
-            pi_, _ = cams[i].project_world2image(pw)
-            pi.append(pi_ + np.random.normal(0.0, noise_sigma, pi_.shape))  # add noise
+        z_axis = [-center[i, :] for i in range(theta.shape[0])]
 
-        frms = []
-        for i, c in enumerate(cams):
-            frms.append(generate_frms(pi[i], des, cams[i]))
+        for i in range(theta.shape[0]):
+            cams.append(PinHoleCamera.place_a_camera(center[i, :], z_axis[i], (1, 0, 0), f=f))
+            pi_, pc_ = cams[i].project_world2image(pw)
+            pi_ += np.random.normal(0.0, noise_sigma, pi_.shape)
+            frms.append(generate_frms(pi_, pc_, des, cams[i]))
+            pi.append(pi_)  # add noise
             print(len(frms[i].des))
 
         save_points_to_file(pw, "../Data/pw.dat")
@@ -242,15 +242,20 @@ def test_sfm():
     ax = plt.gca(projection='3d')
     frames = generate_data(ax)
 
-    plt.figure()
-    ax = plt.gca(projection='3d')
     pt_cloud = map.Map()
     for k, frm in enumerate(frames):
         pt_cloud.add_a_frame(frm)
-        for i in range(k * 5):
-            pt_cloud.update_points()
-            pt_cloud.update_cam_pose()
 
+    assert pt_cloud.init_with_2frms(10, 20)
+
+    plt.figure()
+    ax = plt.gca(projection='3d')
+    pt_cloud.plot_map(ax)
+    set_axis_limit(ax, -20, 20, -10, 30)
+    plt.pause(0.001)
+
+    for iter in range(10):
+        pt_cloud.localize_and_reconstruct()
         plt.cla()
         pt_cloud.plot_map(ax)
         set_axis_limit(ax, -20, 20, -10, 30)
@@ -260,7 +265,7 @@ def test_sfm():
     plt.figure()
     ax = plt.gca(projection='3d')
     print("start optimization...")
-    for i in range(30):
+    for i in range(10):
         pt_cloud.update_points()
         pt_cloud.update_cam_pose()
         pt_cloud.calc_projecting_err()
@@ -269,6 +274,7 @@ def test_sfm():
         pt_cloud.plot_map(ax)
         set_axis_limit(ax, -20, 20, 0, 40)
         plt.pause(0.001)
+    print([f.status for f in pt_cloud.frames])
     print("sfm task finished")
 
 
