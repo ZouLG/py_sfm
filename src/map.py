@@ -16,17 +16,25 @@ class Map():
         self.total_err = 0
         self.slide_win_size = []
 
+    def __slide_mean_update_points(self, idx, p):
+        if self.pw[idx] is None:
+            self.pw[idx] = p
+            self.slide_win_size[idx] = 1
+        else:
+            win_size_old = self.slide_win_size[idx]
+            self.slide_win_size[idx] += 1
+            self.pw[idx] = (self.pw[idx] * win_size_old + p) / (win_size_old + 1)
+
     def get_epnp_points(self, frm):
-        idx = []
-        pw = []
-        for i in range(len(frm.kps_idx)):
-            if self.pw[frm.kps_idx[i]] is not None:
-                idx.append(i)
-                pw.append(self.pw[frm.kps_idx[i]])
-        return pw, frm.pi[idx, :]
+        idx_in_frm, pw = [], []
+        for i, idx in enumerate(frm.kps_idx):
+            if self.pw[idx] is not None:
+                idx_in_frm.append(i)
+                pw.append(self.pw[idx])
+        return pw, frm.pi[idx_in_frm, :], idx_in_frm
 
     def localization(self, frm):
-        pw, pi = self.get_epnp_points(frm)
+        pw, pi, _ = self.get_epnp_points(frm)
         if len(pw) < 8:
             print("Warning: too few key points")
             return
@@ -34,13 +42,19 @@ class Map():
         cam_tmp = PinHoleCamera(R, t)
         cam_tmp.K = frm.cam.K
         err = cam_tmp.calc_projection_error(pw, pi)
-        if err < self.pj_err_th and err < frm.pj_err:
+        if err < frm.pj_err:
             frm.cam.R = R
             frm.cam.t = t
             frm.pj_err = err
             frm.status = True
-        else:
-            print("Warning: projecting error too big, err = %f", err)
+
+    def reconstruction(self, frm):
+        if frm.status is False:
+            return
+        pw, pi, idx = self.get_epnp_points(frm)
+        pw_pj = bundle_projection(frm.cam, pw, pi)
+        for k, p in zip(idx, pw_pj):
+            self.__slide_mean_update_points(frm.kps_idx[k], p)
 
     def get_corresponding_matches(self, ref, mat):
         idx0, idx1, idx2 = [], [], []
@@ -61,7 +75,7 @@ class Map():
             if match[1] > best_match:
                 best_match = match[1]
                 idx = i
-        assert idx > 0
+        assert idx >= 0
         return self.frames[idx], self.frames[self.best_match[idx][0]]
 
     def init_with_2frms(self, t_scale, iter=20):
@@ -70,7 +84,7 @@ class Map():
         pi0, pi1, idx = self.get_corresponding_matches(ref, mat)
         pc0 = ref.cam.project_image2camera(pi0)
         pc1 = mat.cam.project_image2camera(pi1)
-        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-2, max_iter=10)
+        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-2, max_iter=70)
         R_list, t_list = decompose_essential_mat(E)
         R, t = check_validation_rt(R_list, t_list, pc0, pc1)
         mat.cam.R = np.matmul(ref.cam.R, R)
@@ -80,9 +94,10 @@ class Map():
         err_min = ref.cam.calc_projection_error(pw, pi0) + mat.cam.calc_projection_error(pw, pi1)
         pw_best = pw
 
-        ratio = 0.0
+        ratio = 1.0
         for i in range(iter):
             R, t = epnp.estimate_pose_epnp(mat.cam.K, pw, pi1)
+            t = t / np.linalg.norm(t) * t_scale
             cam_tmp = PinHoleCamera(R, t, f=mat.cam.f, sx=mat.cam.sx, sy=mat.cam.sy,
                                     img_w=mat.cam.img_w, img_h=mat.cam.img_h)
             _, pw0, pw1 = camera_triangulation(ref.cam, cam_tmp, pi0, pi1)
@@ -140,7 +155,6 @@ class Map():
             self.slide_win_size = [0] * len(frm.des)
             self.pw = [None] * len(frm.des)
             frm.kps_idx = list(range(len(frm.des)))
-            frm.status = True
             return
 
         # match new frame with all old frames to register each key point
@@ -169,57 +183,48 @@ class Map():
         self.frames.append(frm)
         self.slide_win_size += [0] * len(frm.kps_idx)
 
-    def localize_and_reconstruct(self):
-        # estimate pose of the frame
-        for i, frm1 in enumerate(self.frames):
-            if frm1.status is False:
-                self.localization(frm1)
-            if frm1.status is True:
-                for j in range(i + 1, len(self.frames)):
-                    if self.frames[j].status is True:
-                        frm2 = self.frames[j]
-                        self.triangulate_2frms(frm1, frm2)
-
-    def reconstruction(self):
-        pass
-
-    def refine_map(self):
-        pass
-
     def triangulate_2frms(self, frm1, frm2):
         pi1, pi2, idx = self.get_corresponding_matches(frm1, frm2)
         pw, pw1, pw2 = camera_triangulation(frm1.cam, frm2.cam, pi1, pi2)
         for i, j in enumerate(idx):
-            if self.pw[j] is None:
-                self.pw[j] = pw[i]
-            else:
-                self.pw[j] = (self.pw[j] * self.slide_win_size[j] + pw[i]) / (self.slide_win_size[j] + 1)
-        self.slide_win_size[j] += 1
+            self.__slide_mean_update_points(j, pw[i])
+
+    def localize_and_reconstruct(self):
+        # estimate pose of the frame
+        for i, frm in enumerate(self.frames):
+            if frm.status is False:
+                self.localization(frm)
+                self.reconstruction(frm)
+
+        for i, frm1 in enumerate(self.frames):
+            if frm1.status is False:
+                continue
+            for j in range(i + 1, len(self.frames)):
+                frm2 = self.frames[j]
+                if frm2.status is True:
+                    self.triangulate_2frms(frm1, frm2)
+
+    def refine_map(self):
+        self.slide_win_size = [0] * len(self.pw)
+        self.update_points()
+        self.update_cam_pose()
 
     def update_points(self):
-        frm_num = len(self.frames)
-        for i in range(0, frm_num - 1):
-            ref = self.frames[i]
-            for j in range(i + 1, frm_num):
-                mat = self.frames[j]
-                if ref.status is False or mat.status is False:
-                    continue
-                self.triangulate_2frms(ref, mat)
+        for i, frm in enumerate(self.frames):
+            if frm.status is False:
+                self.reconstruction(frm)
 
     def update_cam_pose(self):
         for frm in self.frames:
-            pw, pi = self.get_epnp_points(frm)
+            pw, pi, _ = self.get_epnp_points(frm)
             if len(pw) < 5:
                 # frm.status = False
                 continue
             frm.cam.R, frm.cam.t = epnp.estimate_pose_epnp(frm.cam.K, pw, pi)
             err = frm.cam.calc_projection_error(pw, pi)
-            if err < self.pj_err_th:
+            if err < frm.pj_err:
                 frm.status = True
                 frm.pj_err = err
-            else:
-                print("Warning: projecting error is too big! frame skipped")
-                # frm.status = False
 
     def reset_scale(self):
         """

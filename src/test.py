@@ -246,7 +246,7 @@ def test_sfm():
     for k, frm in enumerate(frames):
         pt_cloud.add_a_frame(frm)
 
-    assert pt_cloud.init_with_2frms(10, 20)
+    assert pt_cloud.init_with_2frms(10, iter=20)
 
     plt.figure()
     ax = plt.gca(projection='3d')
@@ -266,8 +266,7 @@ def test_sfm():
     ax = plt.gca(projection='3d')
     print("start optimization...")
     for i in range(10):
-        pt_cloud.update_points()
-        pt_cloud.update_cam_pose()
+        pt_cloud.refine_map()
         pt_cloud.calc_projecting_err()
         print(pt_cloud.total_err)
         plt.cla()
