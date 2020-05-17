@@ -4,7 +4,7 @@ from utils import *
 import epnp
 
 
-class Map():
+class Map(object):
     def __init__(self, *args, **kwargs):
         self.pw = []
 
@@ -94,7 +94,7 @@ class Map():
         err_min = ref.cam.calc_projection_error(pw, pi0) + mat.cam.calc_projection_error(pw, pi1)
         pw_best = pw
 
-        ratio = 1.0
+        ratio = 0.0
         for i in range(iter):
             R, t = epnp.estimate_pose_epnp(mat.cam.K, pw, pi1)
             t = t / np.linalg.norm(t) * t_scale
@@ -195,6 +195,7 @@ class Map():
             if frm.status is False:
                 self.localization(frm)
                 self.reconstruction(frm)
+                self.refine_map()
 
         for i, frm1 in enumerate(self.frames):
             if frm1.status is False:
@@ -211,8 +212,7 @@ class Map():
 
     def update_points(self):
         for i, frm in enumerate(self.frames):
-            if frm.status is False:
-                self.reconstruction(frm)
+            self.reconstruction(frm)
 
     def update_cam_pose(self):
         for frm in self.frames:
@@ -226,7 +226,7 @@ class Map():
                 frm.status = True
                 frm.pj_err = err
 
-    def reset_scale(self):
+    def reset_scale(self, scale):
         """
             set the scale of the first best matching frame pair to self.scale and adjust the whole map
         """

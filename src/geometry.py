@@ -21,7 +21,7 @@ def sum_to_n(n):
 
 def quadratic_form(n1, A, n2):
     # n1.T * A * n2
-    return np.matmul(np.matmul(n1.reshape((1, -1)), A), n2.reshape(-1, 1))
+    return np.squeeze(np.matmul(np.matmul(n1.reshape((1, -1)), A), n2.reshape(-1, 1)))
 
 
 def homo_rotation_mat(R, t):
@@ -217,15 +217,14 @@ def solve_re_linearization(M, s_dim):
                         if (j == k and k == l) or j > k:
                             continue
                         if j == k:
-                            print(i, j, k, l)
+                            # print(i, j, k, l)
                             permu_list.append((table[i, j], table[k, l], table[i, l], table[j, k]))
                         else:
-                            print(i, j, k, l)
+                            # print(i, j, k, l)
                             permu_list.append((table[i, j], table[k, l], table[i, k], table[j, l]))
                         if (i < j) and (j < k) and (k < l):
-                            print(i, j, k, l)
+                            # print(i, j, k, l)
                             permu_list.append((table[i, j], table[k, l], table[i, l], table[j, k]))
-        print(len(permu_list))
         return permu_list
 
     def get_coefs(M, i, j, k, l):

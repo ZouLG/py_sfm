@@ -8,15 +8,8 @@ import visualize as vis
 import epnp
 import map
 from frame import Frame
+from utils import set_axis_limit
 
-
-def set_axis_limit(ax, low, high, zlow=-10, zhigh=10):
-    ax.set_xlim([low, high])
-    ax.set_ylim([low, high])
-    ax.set_zlim([zlow, zhigh])
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
 
 def generate_sphere_points(num, o=Point3D((0, 0, 0)), r=1):
     alpha = np.random.uniform(0.0, np.pi * 2, (num,))
@@ -28,16 +21,6 @@ def generate_sphere_points(num, o=Point3D((0, 0, 0)), r=1):
         z = r * np.sin(theta[i])
         plist.append(o + (x, y, z))
     return plist
-
-
-def generate_rand_points(num=1, loc=[0, 0, 0], scale=[1, 1, 1]):
-    x = np.random.normal(loc[0], scale[0], (num,))
-    y = np.random.normal(loc[1], scale[1], (num,))
-    z = np.random.normal(loc[2], scale[2], (num,))
-    points = []
-    for i in range(num):
-        points.append(Point3D((x[i], y[i], z[i])))
-    return points
 
 
 def generate_training_data():
@@ -254,7 +237,7 @@ def test_sfm():
     set_axis_limit(ax, -20, 20, -10, 30)
     plt.pause(0.001)
 
-    for iter in range(10):
+    for iter in range(5):
         pt_cloud.localize_and_reconstruct()
         plt.cla()
         pt_cloud.plot_map(ax)
@@ -265,7 +248,7 @@ def test_sfm():
     plt.figure()
     ax = plt.gca(projection='3d')
     print("start optimization...")
-    for i in range(10):
+    for i in range(50):
         pt_cloud.refine_map()
         pt_cloud.calc_projecting_err()
         print(pt_cloud.total_err)
