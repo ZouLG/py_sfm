@@ -8,6 +8,8 @@ import visualize as vis
 import epnp
 import map
 from frame import Frame
+from quarternion import Quarternion
+from optimizer import PnpLmSolver
 from utils import set_axis_limit
 
 
@@ -86,33 +88,25 @@ def check_camera_position():
     set_axis_limit(ax, -10, 10)
 
 
-def test_visualizer():
-    plt.figure()
-    ax = plt.gca(projection='3d')
-
-    R = np.eye(3)
-    t = np.array((-1, -1, 0))
-    camera1 = PinHoleCamera()
-    camera2 = PinHoleCamera(R, t)
-    p2d1 = np.fromfile("../Data/p2d1.dat", np.float64).reshape((-1, 2))
-    p2d2 = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
-    vis.test_visualizer(ax, camera1, camera2, p2d1, p2d2)
-
-
 def test_pnp():
     f = 1.05
-    pi = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
-    pi += np.random.normal(0.0, 15, pi.shape)
-    pw = list2mat(read_points_from_file("../Data/pw.dat"))
-    pw += np.random.normal(0.0, 0.0, pw.shape)
-    pw = mat2list(pw)
+    pw = generate_sphere_points(8, Point3D((0, 0, 10)), 5)
+    camera = PinHoleCamera.place_a_camera((5, 5, 0), (-1, -1, 1), (0, 1, 0), f=f)
+    pi, _ = camera.project_world2image(pw)
+    pi += np.random.normal(0.0, 10, pi.shape)
+    print("R* = \n", camera.R)
+    print("t* = \n", camera.t)
 
-    camera = PinHoleCamera(f=f)
-    # epnp.estimate_pose_epnp(camera.K, pw, pi, 4)
-    R, t, pw, pi = epnp.ransac_estimate_pose(camera.K, pw, pi, iter=10, threshold=50)
-    R.tofile("../Data/R.dat")
-    t.tofile("../Data/t.dat")
-    print(len(pw))
+    # EPNP method
+    R, t = epnp.estimate_pose_epnp(camera.K, pw, pi, 4)
+    print("R = \n", R)
+    print("t = \n", t)
+
+    # Non-linear optimization
+    solver = PnpLmSolver([Quarternion.mat_to_quaternion(np.eye(3)), np.zeros((3, ))], pw, pi, camera.K)
+    print(solver.forward())
+    solver.solve()
+    print(np.matmul(solver.err, solver.err))
 
 
 def test_back_end():
@@ -263,8 +257,8 @@ def test_sfm():
 if __name__ == "__main__":
     # plot_data()
     # generate_training_data()
-    # test_pnp()
-    test_sfm()
+    test_pnp()
+    # test_sfm()
     # test_back_end()
     # check_camera_position()
     # test_visualizer()

@@ -18,6 +18,24 @@ class Point3D:
         return str(self.p)
 
     def __setattr__(self, key, value):
+        # ptmp = np.zeros((3,))
+        # if key == 'x':
+        #     ptmp[0] = value
+        # elif key == 'y':
+        #     ptmp[1] = value
+        # elif key == 'z':
+        #     ptmp[2] = value
+        # elif key == 'p':
+        #     ptmp = value
+        # else:
+        #     print("Error: class Point3D named %s" % key)
+        #     raise KeyError
+        # self.__dict__['x'] = ptmp[0]
+        # self.__dict__['y'] = ptmp[1]
+        # self.__dict__['z'] = ptmp[2]
+        # self.__dict__['p'] = ptmp
+        # self.__dict__['ph'][0: 3] = ptmp
+
         if key == 'x':
             self.__dict__[key] = value
             self.__dict__['p'][0] = value
@@ -45,8 +63,7 @@ class Point3D:
             self.__dict__['y'] = value[1]
             self.__dict__['z'] = value[2]
         else:
-            print("Error: class Point3D has no attribute named %s" % key)
-            exit()
+            raise KeyError
 
     def __sub__(self, b):
         if isinstance(b, Point3D):

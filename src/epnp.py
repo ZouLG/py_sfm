@@ -1,7 +1,6 @@
 from point import *
 from camera import PinHoleCamera
 import geometry as geo
-import numpy as np
 import random
 from optimizer import EpnpSolver
 
@@ -143,14 +142,15 @@ def estimate_pose_epnp(K, pw, pi, ctrl_num=4):
             err_best = err
     solver.coef = beta_best
     solver.forward()
-    print("error before fine tune: %f" % err_best)
+    # print("error before fine tune: %f" % err_best)
 
     # fine-tune beta
-    # k = 0
-    # while solver.residual > 5e-3 and k < 15:
-    #     solver.sovle()
-    #     k += 1
-    #     print("error after %d iterations: %f" % (k, solver.residual))
+    k = 0
+    while solver.residual > 5e-3 and k < 15:
+        solver.sovle()
+        k += 1
+        # print("error after %d iterations: %f" % (k, solver.residual))
+    # print("error after fine-tune: %f" % solver.residual)
 
     # recover pose
     ctrl_pc = [Point3D(np.matmul(pc, solver.coef)) for pc in data]
@@ -196,7 +196,7 @@ def ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
             continue
         pw_tmp, pi_tmp = get_by_idx(pw, pi, index)
         R, t = estimate_pose_epnp(K, pw_tmp, pi_tmp)
-        cam = camera.PinHoleCamera(R, t, f=K[0, 0] * 0.002)     # sx = 0.002
+        cam = PinHoleCamera(R, t, f=K[0, 0] * 0.002)     # sx = 0.002
         inliers = get_inliers(cam, pw, pi, threshold)
         if len(inliers) > len(inlier_best):
             inlier_best = inliers
@@ -211,7 +211,7 @@ def ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
     while True:
         pw_tmp, pi_tmp = get_by_idx(pw, pi, inlier_best)
         R, t = estimate_pose_epnp(K, pw_tmp, pi_tmp)
-        cam = camera.PinHoleCamera(R, t, f=K[0, 0] * 0.002)     # sx = 0.002
+        cam = PinHoleCamera(R, t, f=K[0, 0] * 0.002)     # sx = 0.002
         inliers = get_inliers(cam, pw, pi, threshold)
         if len(inliers) > len(inlier_best):
             inlier_best = inliers
