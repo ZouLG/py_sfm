@@ -13,6 +13,15 @@ from optimizer import PnpLmSolver
 from utils import set_axis_limit
 
 
+def plot_data(cameras, pw):
+    plt.figure()
+    ax = plt.gca(projection='3d')
+    for c in cameras:
+        c.show(ax)
+        c.show_projection(ax, pw)
+    plt.pause(0.001)
+
+
 def generate_sphere_points(num, o=Point3D((0, 0, 0)), r=1):
     alpha = np.random.uniform(0.0, np.pi * 2, (num,))
     theta = np.random.uniform(0.0, np.pi * 2, (num,))
@@ -90,23 +99,36 @@ def check_camera_position():
 
 def test_pnp():
     f = 1.05
-    pw = generate_sphere_points(8, Point3D((0, 0, 10)), 5)
+    pw = generate_sphere_points(16, Point3D((0, 0, 10)), 5)
+    # save_points_to_file(pw, "../Data/pw.dat")
+    pw = read_points_from_file("../Data/pw.dat")
+
     camera = PinHoleCamera.place_a_camera((5, 5, 0), (-1, -1, 1), (0, 1, 0), f=f)
     pi, _ = camera.project_world2image(pw)
     pi += np.random.normal(0.0, 10, pi.shape)
+    # pi.tofile("../Data/pi.dat")
+    pi = np.fromfile("../Data/pi.dat").reshape((-1, 2))
     print("R* = \n", camera.R)
     print("t* = \n", camera.t)
+    print(camera.calc_projection_error(pw, pi))
+    plot_data([camera], pw)
 
     # EPNP method
     R, t = epnp.estimate_pose_epnp(camera.K, pw, pi, 4)
+    camera = PinHoleCamera(R, t, f=f)
     print("R = \n", R)
     print("t = \n", t)
+    print(camera.calc_projection_error(pw, pi))
+    plot_data([camera], pw)
 
     # Non-linear optimization
-    solver = PnpLmSolver([Quarternion.mat_to_quaternion(np.eye(3)), np.zeros((3, ))], pw, pi, camera.K)
-    print(solver.forward())
-    solver.solve()
-    print(np.matmul(solver.err, solver.err))
+    solver = PnpLmSolver([Quarternion.mat_to_quaternion(R) + [0.2, 0.4, -0.5, -0.2], np.zeros((3,))], pw, pi, camera.K)
+    for i in range(30):
+        solver.solve_t()
+        solver.solve_q()
+        print(solver.residual)
+    camera = PinHoleCamera(Quarternion.quaternion_to_mat(solver.quat), solver.t)
+    plot_data([camera], pw)
 
 
 def test_back_end():
@@ -150,25 +172,6 @@ def test_back_end():
     print(t)
     R.tofile("../Data/R.dat")
     t.tofile("../Data/t.dat")
-
-
-def plot_data():
-    plt.figure()
-    ax = plt.gca(projection='3d')
-    data_type = np.float64
-    R = np.fromfile("../Data/R.dat", data_type).reshape((3, 3))
-    t = np.fromfile("../Data/t.dat", data_type)
-    p2d1 = np.fromfile("../Data/p2d1.dat", np.float64).reshape((-1, 2))
-    p2d2 = np.fromfile("../Data/p2d2.dat", np.float64).reshape((-1, 2))
-    p3d1 = read_points_from_file("../Data/p3d1.dat")
-    p3d2 = read_points_from_file("../Data/p3d2.dat")
-    pw = read_points_from_file("../Data/pw.dat")
-
-    camera1 = PinHoleCamera()
-    camera2 = PinHoleCamera(R, t)
-    camera1.show(ax)
-    camera1.show_projection(ax, pw)
-    plt.show()
 
 
 def test_sfm():

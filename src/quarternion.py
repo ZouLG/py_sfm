@@ -16,13 +16,19 @@ class Quarternion(object):
         return self.q[item]
 
     def __repr__(self):
-        return "%f + %fi + %fj + %fk" % (self.q[0], self.q[1], self.q[2], self.q[3])
+        return "[%f, %fi, %fj, %fk]" % (self.q[0], self.q[1], self.q[2], self.q[3])
 
     def __add__(self, obj):
         if isinstance(obj, Quarternion):
             return Quarternion(self.q + obj.q)
-        elif isinstance(obj, np.ndarray):
+        elif type(obj) in [list, tuple, np.ndarray]:
             return Quarternion(self.q + obj)
+
+    def __sub__(self, obj):
+        if isinstance(obj, Quarternion):
+            return Quarternion(self.q - obj.q)
+        elif isinstance(obj, np.ndarray):
+            return Quarternion(self.q - obj)
 
     def __mul__(self, obj):
         if isinstance(obj, Quarternion):
@@ -56,9 +62,9 @@ class Quarternion(object):
     @staticmethod
     def mat_to_quaternion(R):
         q0 = np.sqrt(np.trace(R) + 1) / 2
-        q1 = (R[1, 2] - R[2, 1]) / q0 / 4
-        q2 = (R[2, 0] - R[0, 2]) / q0 / 4
-        q3 = (R[0, 1] - R[1, 0]) / q0 / 4
+        q1 = (R[2, 1] - R[1, 2]) / q0 / 4
+        q2 = (R[0, 2] - R[2, 0]) / q0 / 4
+        q3 = (R[1, 0] - R[0, 1]) / q0 / 4
         return Quarternion((q0, q1, q2, q3))
 
     @staticmethod

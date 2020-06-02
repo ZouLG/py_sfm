@@ -71,19 +71,8 @@ class PnpLmSolver(Optimizer):
         self.K = K
         self.fu = K[0, 0]
         self.fv = K[1, 1]
-        self.__dict__['quat'] = pose[0]
-        self.__dict__['t'] = pose[1]
-        self.__dict__['x'] = np.concatenate((self.quat.q, self.t))
-
-    def __setattr__(self, key, value):
-        self.__dict__[key] = value
-        if key == 'x':
-            self.__dict__['quat'] = value[0: 4]
-            self.__dict__['t'] = value[4: 7]
-        elif key == 'quat':
-            self.__dict__['x'][0: 4] = value
-        elif key == 't':
-            self.__dict__['x'][4: 7] = value
+        self.quat = pose[0]
+        self.t = pose[1]
 
     def forward(self):
         self._pi, self.pc = [], []
@@ -94,7 +83,8 @@ class PnpLmSolver(Optimizer):
             uv /= uv[2]
             self._pi.append(uv[0: 2])   # reprojected coordinate
             self.err[k * 2: k * 2 + 2] = self._pi[k] - self.pi[k]
-        return np.matmul(self.err, self.err)
+        self.residual = np.matmul(self.err, self.err) / len(self.pw)
+        return self.residual
 
     @staticmethod
     def derr_over_dpc(q, t, fu, fv, pw):
@@ -128,34 +118,33 @@ class PnpLmSolver(Optimizer):
     def derr_over_dt(q, t, fu, fv, pw):
         return PnpLmSolver.derr_over_dpc(q, t, fu, fv, pw)
 
-    def calc_jacobian_mat(self):
-        j = np.zeros((len(self.pw) * 2, 7))
+    def calc_jacobian_mat_q(self):
+        j = np.zeros((len(self.pw) * 2, 4))
         for k in range(len(self.pw)):
             pw, pi = self.pw[k], self.pi[k, :]
-            j[2 * k: 2 * k + 2, 0:4] = PnpLmSolver.derr_over_dquat(self.quat, self.t, self.fu, self.fv, pw)
-            j[2 * k: 2 * k + 2, 4:] = PnpLmSolver.derr_over_dt(self.quat, self.t, self.fu, self.fv, pw)
+            j[2 * k: 2 * k + 2, :] = PnpLmSolver.derr_over_dquat(self.quat, self.t, self.fu, self.fv, pw)
         return j
 
-    def solve(self):
+    def calc_jacobian_mat_t(self):
+        j = np.zeros((len(self.pw) * 2, 3))
+        for k in range(len(self.pw)):
+            pw, pi = self.pw[k], self.pi[k, :]
+            j[2 * k: 2 * k + 2, :] = PnpLmSolver.derr_over_dt(self.quat, self.t, self.fu, self.fv, pw)
+        return j
+
+    def solve_q(self):
         self.forward()
-        J = self.calc_jacobian_mat()
+        J = self.calc_jacobian_mat_q()
         H = np.matmul(J.T, J)
         Hinv = np.linalg.pinv(H)
-        dx = np.matmul(np.matmul(Hinv, J.T), self.err)
-        self.x -= dx
+        dq = np.matmul(np.matmul(Hinv, J.T), self.err)
+        self.quat = self.quat - dq
+        self.quat = self.quat / self.quat.norm()
 
-
-
-    def calc_jacobian_left(self, axis, inv=False):
-        theta = np.linalg.norm(axis)
-        k = axis / theta
-        K = geo.cross_mat(k)
-        if inv:
-            th2 = theta / 2
-            c0 = th2 * np.cos(th2) / np.sin(th2)
-            return c0 * np.eye(3) + (1 - c0) * np.matmul(k.reshape((-1, 1)), k.reshape((1, -1))) - th2 * K
-        else:
-            c0 = np.sin(theta) / theta
-            c1 = (1 - np.cos(theta)) / theta
-            return c0 * np.eye(3) + (1 - c0) * np.matmul(k.reshape((-1, 1)), k.reshape((1, -1))) + c1 * K
-
+    def solve_t(self):
+        self.forward()
+        J = self.calc_jacobian_mat_t()
+        H = np.matmul(J.T, J)
+        Hinv = np.linalg.pinv(H)
+        dt = np.matmul(np.matmul(Hinv, J.T), self.err)
+        self.t = self.t - dt
