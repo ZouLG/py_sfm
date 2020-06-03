@@ -9,7 +9,7 @@ import epnp
 import map
 from frame import Frame
 from quarternion import Quarternion
-from optimizer import PnpLmSolver
+from optimizer import PnpSolver
 from utils import set_axis_limit
 
 
@@ -105,7 +105,7 @@ def test_pnp():
 
     camera = PinHoleCamera.place_a_camera((5, 5, 0), (-1, -1, 1), (0, 1, 0), f=f)
     pi, _ = camera.project_world2image(pw)
-    pi += np.random.normal(0.0, 10, pi.shape)
+    pi += np.random.normal(0.0, 6, pi.shape)
     # pi.tofile("../Data/pi.dat")
     pi = np.fromfile("../Data/pi.dat").reshape((-1, 2))
     print("R* = \n", camera.R)
@@ -122,10 +122,11 @@ def test_pnp():
     plot_data([camera], pw)
 
     # Non-linear optimization
-    solver = PnpLmSolver([Quarternion.mat_to_quaternion(R) + [0.2, 0.4, -0.5, -0.2], np.zeros((3,))], pw, pi, camera.K)
-    for i in range(30):
+    solver = PnpSolver([Quarternion.mat_to_quaternion(R), t], pw, pi, camera.K)
+    for i in range(10):
         solver.solve_t()
         solver.solve_q()
+        # solver.solve()
         print(solver.residual)
     camera = PinHoleCamera(Quarternion.quaternion_to_mat(solver.quat), solver.t)
     plot_data([camera], pw)
