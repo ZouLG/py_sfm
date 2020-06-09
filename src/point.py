@@ -100,29 +100,6 @@ class Point3D:
         ax.scatter(self.x, self.y, self.z, s=s, marker=marker, color=color)
 
 
-class ImgPlane:
-    def __init__(self, p0, p1, p2, p3):
-        self.__dict__['p0'] = Point3D(p0)
-        self.__dict__['p1'] = Point3D(p1)
-        self.__dict__['p2'] = Point3D(p2)
-        self.__dict__['p3'] = Point3D(p3)
-
-    def show(self, ax, marker='o', color='blue', s=20):
-        self.p0.plot3d(ax, color='red', marker=marker, s=s)
-        self.p1.plot3d(ax, color=color, marker=marker, s=s)
-        self.p2.plot3d(ax, color=color, marker=marker, s=s)
-        self.p3.plot3d(ax, color=color, marker=marker, s=s)
-        ax.plot3D([self.p0.x, self.p1.x], [self.p0.y, self.p1.y], [self.p0.z, self.p1.z], color=color)
-        ax.plot3D([self.p1.x, self.p2.x], [self.p1.y, self.p2.y], [self.p1.z, self.p2.z], color=color)
-        ax.plot3D([self.p2.x, self.p3.x], [self.p2.y, self.p3.y], [self.p2.z, self.p3.z], color=color)
-        ax.plot3D([self.p3.x, self.p0.x], [self.p3.y, self.p0.y], [self.p3.z, self.p0.z], color=color)
-
-
-def plot3d(point_list, ax, marker='^', s=40, color='red'):
-    for p in point_list:
-        ax.scatter(p.x, p.y, p.z, marker=marker, s=s, color=color)
-
-
 def list2mat(plist):
     N = len(plist)
     mat = np.zeros((N, 3), np.float32)

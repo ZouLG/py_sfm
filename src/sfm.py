@@ -1,4 +1,3 @@
-import os
 from map import Map
 from frame import Frame
 from point import *
@@ -19,17 +18,8 @@ class Sfm(object):
             if k < 2:
                 self.map.add_a_frame(Frame(), img, 4)
 
-        for iter in range(5):
-            self.map.localize_and_reconstruct()
-            plt.cla()
-            self.map.plot_map(ax)
-            set_axis_limit(ax, -20, 20, -10, 30)
-            plt.pause(0.001)
-
-        self.map.plot_map(ax)
-        plt.show()
-
 
 if __name__ == "__main__":
     sfm = Sfm(r"F:\zoulugeng\program\python\01.SLAM\Data\data_qinghuamen\image data")
     sfm.reconstruct()
+    plt.show()

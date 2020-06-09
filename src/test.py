@@ -4,7 +4,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from point import *
 from camera import *
 from geometry import *
-import visualize as vis
 import epnp
 import map
 from frame import Frame
@@ -32,43 +31,6 @@ def generate_sphere_points(num, o=Point3D((0, 0, 0)), r=1):
         z = r * np.sin(theta[i])
         plist.append(o + (x, y, z))
     return plist
-
-
-def generate_training_data():
-    plt.figure()
-    ax = plt.gca(projection='3d')
-
-    # two cameras with different views
-    camera1 = PinHoleCamera()
-    camera2 = PinHoleCamera.place_a_camera((0, 0, 20), (0, 0, -1), (0, 1, 0))
-    print("R = \n", camera2.R)
-    print("t = \n", camera2.t)
-    camera1.show(ax)
-    camera2.show(ax)
-    print("E = \n", camera2.get_essential_mat())
-
-    p = generate_rand_points(20, [0, 0, 9], [5, 5, 5])
-    # p = generate_sphere_points(25, Point3D((0, 0, 10)), 5)
-    # p = [Point3D((3, 6, 10))]
-    p2d1, p3d1 = camera1.project_world2image(p)
-    p2d2, p3d2 = camera2.project_world2image(p)
-
-    camera1.show_projection(ax, p)
-    camera2.show_projection(ax, p)
-    img1 = camera1.show_projected_img(p)
-    img2 = camera2.show_projected_img(p)
-    plt.figure()
-    plt.subplot(121)
-    plt.imshow(img1, cmap='gray')
-    plt.subplot(122)
-    plt.imshow(img2, cmap='gray')
-    p2d1.tofile("../Data/p2d1.dat")
-    p2d2.tofile("../Data/p2d2.dat")
-    save_points_to_file(p3d1, "../Data/p3d1.dat")
-    save_points_to_file(p3d2, "../Data/p3d2.dat")
-    save_points_to_file(p, "../Data/pw.dat")
-
-    set_axis_limit(ax, -10, 10)
 
 
 def check_camera_position():
@@ -122,11 +84,13 @@ def test_pnp():
     plot_data([camera], pw)
 
     # Non-linear optimization
-    solver = PnpSolver([Quarternion.mat_to_quaternion(R), t], pw, pi, camera.K)
+    q0 = Quarternion.mat_to_quaternion(R) + [0.2, -0.3, 0.5, -0.7]
+    t0 = t + [-2.3, 1.5, -3.7]
+    solver = PnpSolver([q0, t0], pw, pi, camera.K)
     for i in range(10):
-        solver.solve_t()
-        solver.solve_q()
-        # solver.solve()
+        # solver.solve_t()
+        # solver.solve_q()
+        solver.solve()
         print(solver.residual)
     camera = PinHoleCamera(Quarternion.quaternion_to_mat(solver.quat), solver.t)
     plot_data([camera], pw)

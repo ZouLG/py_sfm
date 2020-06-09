@@ -1,5 +1,5 @@
 import numpy as np
-from point import *
+from point import Point3D, list2mat, mat2list
 
 
 def generate_rand_points(num=1, loc=[0, 0, 0], scale=[1, 1, 1]):

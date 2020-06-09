@@ -2,31 +2,25 @@ from camera import *
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
+from quarternion import Quarternion
 from utils import *
 import exifread
 
 
 class Frame:
-    def __init__(self,
-                 pi=None,
-                 des=[],
-                 R=np.eye(3),
-                 t=np.zeros((3,)),
-                 f=1.0
-                 ):
+    def __init__(self, pi=None, des=[], cam=PinHoleCamera()):
         """
             pi: 2d image coordinates of matched key points
             des: description of detected key points
-            kps_idx: index of key points in the Map
-            cam: pin-hole camera model
+            cam: PinHoleCamera model of this frame
         """
         self.pi = pi
         self.des = des
+        self.cam = cam
 
         self.kps_idx = [None] * len(des)
-        self.cam = PinHoleCamera(R, t, f=f)
-        self.status = False
         self.pj_err = np.Inf
+        self.img = None     # for test use
 
     @staticmethod
     def detect_kps(img, detector):
@@ -36,11 +30,15 @@ class Frame:
             pi[i, :] = kps[i].pt
         return pi, des, kps
 
-    @staticmethod
-    def draw_kps(img, kps, color=(255, 0, 0)):
-        draw_img = cv2.drawKeypoints(img, kps, img, color=color)
+    def draw_kps(self, img, radius=5, color=(255, 0, 0)):
+        draw_img = img
+        for i in range(self.pi.shape[0]):
+            if self.kps_idx[i] is not None:
+                cv2.circle(draw_img, (int(self.pi[i, 0]), int(self.pi[i, 1])),
+                           radius=radius, color=color, thickness=1)
+        # draw_img = cv2.drawKeypoints(img, kps, img, color=color)
         plt.figure()
-        plt.imshow(draw_img)
+        plt.imshow(draw_img, cmap='gray')
 
     @staticmethod
     def flann_match_kps(des1, des2, knn_ratio=0.5):
@@ -55,8 +53,7 @@ class Frame:
         matcher = cv2.FlannBasedMatcher(index_params, search_params)
         # matcher = cv2.BFMatcher()
         matches = matcher.knnMatch(des1, des2, k=2)
-        idx0 = []
-        idx1 = []
+        idx0, idx1 = [], []
         for match in matches:
             if match[0].distance < match[1].distance * knn_ratio:
                 idx0.append(match[0].queryIdx)
@@ -88,9 +85,11 @@ class Frame:
         xy_unit = get_data_with_tag(exif_data, 'EXIF FocalPlaneResolutionUnit')
         sx = xy_unit / nx
         sy = xy_unit / ny
+        fx = f / sx
+        fy = f / sy
         img_w = get_data_with_tag(exif_data, 'EXIF ExifImageWidth')
         img_h = get_data_with_tag(exif_data, 'EXIF ExifImageLength')
-        return [f, sx, sy, img_w, img_h]
+        return [f, fx, fy, img_w, img_h]
 
     def sort_kps_by_idx(self):
         """
@@ -114,32 +113,6 @@ class Frame:
         R_list, t_list = decompose_essential_mat(E)
         R, t = check_validation_rt(R_list, t_list, pc1, pc2)
         return R, t, inliers
-
-    def estimate_pose_and_points(self, ref, t_scale=15):
-        idx0 = []
-        idx1 = []
-        for i in range(len(self.kps_idx)):
-            k = self.kps_idx[i]
-            j = binary_search(ref.kps_idx, k)
-            if j >= 0:
-                idx0.append(j)
-                idx1.append(i)
-        pi0 = get_point_by_idx(ref.pi, idx0)
-        pi1 = get_point_by_idx(self.pi, idx1)
-        pc0 = ref.cam.project_image2camera(pi0)
-        pc1 = self.cam.project_image2camera(pi1)
-        try:
-            E, inliers = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-3, max_iter=12)
-        except:
-            print("Warning: there are not enough kp matches")
-            return [], []
-        R_list, t_list = decompose_essential_mat(E)
-        R, t = check_validation_rt(R_list, t_list, pc0, pc1)
-        t = t / np.linalg.norm(t) * t_scale
-        self.cam.R = np.matmul(ref.cam.R, R)
-        self.cam.t = np.matmul(ref.cam.R, t)
-        pw, pw1, pw2 = camera_triangulation(ref.cam, self.cam, pi0, pi1)
-        return pw, idx1
 
 
 def test_matcher():
@@ -169,8 +142,9 @@ def test_matcher():
 
 
 if __name__ == "__main__":
-    matches = test_matcher()
-    # jpg_path = r"F:\zoulugeng\program\python\01.SLAM\Data\data_qinghuamen\image data\IMG_5589.jpg"
-    # exif_data = Frame.get_exif_info(jpg_path)
+    # matches = test_matcher()
+    jpg_path = r"F:\zoulugeng\program\python\01.SLAM\Data\data_qinghuamen\image data\IMG_5589.jpg"
+    exif_data = Frame.get_exif_info(jpg_path)
+    print(exif_data)
     # img_data = cv2.imread(jpg_path)
     # print(img_data.shape)

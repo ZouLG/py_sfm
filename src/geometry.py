@@ -55,16 +55,18 @@ def rodriguez(axis, theta):
     return np.matmul(U, V)
 
 
-def rotate3d(p, *args):
+def rigid_transform(p, R, t):
     p_ = Point3D(p)
-    if len(args) == 1:
-        T = args[0]
-        q = np.matmul(T, p_.ph)
-    elif len(args) == 2:
-        R = args[0]
-        t = args[1]
-        q = np.matmul(R, p_.p) + t
+    q = np.matmul(R, p_.p) + t
+    if isinstance(p, Point3D):
+        return Point3D(q)
+    else:
+        return q
 
+
+def rigid_inv_transform(p, R, t):
+    p_ = Point3D(p)
+    q = np.matmul(R.T, p_.p - t)
     if isinstance(p, Point3D):
         return Point3D(q)
     else:

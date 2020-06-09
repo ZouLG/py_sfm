@@ -1,6 +1,7 @@
 import geometry as geo
 import numpy as np
 from quarternion import Quarternion
+from jacobian import derr_over_dcam
 
 
 class Optimizer(object):
@@ -86,82 +87,12 @@ class PnpSolver(Optimizer):
         self.residual = np.matmul(self.err, self.err) / len(self.pw)
         return self.residual
 
-    @staticmethod
-    def derr_over_dpc(q, t, fu, fv, pw):
-        pc = Quarternion.rotate_with_quaternion(q, pw.p) + t
-        return np.array([[fu, 0, -fu * pc[0] / pc[2]],
-                         [0, fv, -fv * pc[1] / pc[2]]]) / pc[2]
-
-    @staticmethod
-    def derr_over_dquat(q, t, fu, fv, pw):
-        """
-            2x4 jacobian matrix of derivative err to camera rotation
-        """
-        n = q.norm()
-        dedpc = PnpSolver.derr_over_dpc(q, t, fu, fv, pw)
-        dpcdr = np.zeros((3, 9))
-        dpcdr[0, 0:3] = pw.p
-        dpcdr[1, 3:6] = pw.p
-        dpcdr[2, 6:9] = pw.p
-        q0, q1, q2, q3 = q / n
-        drdq = 2 * np.array([[0, 0, -2 * q2, -2 * q3],
-                             [-q3, q2, q1, -q0],
-                             [q2, q3, q0, q1],
-                             [q3, q2, q1, q0],
-                             [0, -2 * q1, 0, -2 * q3],
-                             [-q1, -q0, q3, q2],
-                             [-q2, q3, -q0, q1],
-                             [q1, q0, q3, q2],
-                             [0, -2 * q1, -2 * q2, 0]])
-        q0, q1, q2, q3 = q
-        dqdu = np.array([[n ** 2 - q0 ** 2, -q0 * q1, -q0 * q2, -q0 * q3],
-                         [-q1 * q0, n ** 2 - q1 ** 2, -q1 * q3, -q1 * q3],
-                         [-q2 * q0, -q2 * q1, n ** 2 - q2 ** 2, -q2 * q3],
-                         [-q3 * q0, -q3 * q1, -q3 * q2, n ** 2 - q3 ** 2]]) / (n ** 3)
-        return np.matmul(np.matmul(np.matmul(dedpc, dpcdr), drdq), dqdu)
-
-    @staticmethod
-    def derr_over_dt(q, t, fu, fv, pw):
-        return PnpSolver.derr_over_dpc(q, t, fu, fv, pw)
-
-    def calc_jacobian_mat_q(self):
-        j = np.zeros((len(self.pw) * 2, 4))
-        for k in range(len(self.pw)):
-            pw, pi = self.pw[k], self.pi[k, :]
-            j[2 * k: 2 * k + 2, :] = PnpSolver.derr_over_dquat(self.quat, self.t, self.fu, self.fv, pw)
-        return j
-
-    def calc_jacobian_mat_t(self):
-        j = np.zeros((len(self.pw) * 2, 3))
-        for k in range(len(self.pw)):
-            pw, pi = self.pw[k], self.pi[k, :]
-            j[2 * k: 2 * k + 2, :] = PnpSolver.derr_over_dt(self.quat, self.t, self.fu, self.fv, pw)
-        return j
-
     def calc_jacobian_mat(self):
-        j = np.zeros((len(self.pw) * 2, 7))
+        jcam = np.zeros((len(self.pw) * 2, 7))
         for k in range(len(self.pw)):
             pw, pi = self.pw[k], self.pi[k, :]
-            j[2 * k: 2 * k + 2, 0:4] = PnpSolver.derr_over_dquat(self.quat, self.t, self.fu, self.fv, pw)
-            j[2 * k: 2 * k + 2, 4:] = PnpSolver.derr_over_dt(self.quat, self.t, self.fu, self.fv, pw)
-        return j
-
-    def solve_q(self):
-        self.forward()
-        J = self.calc_jacobian_mat_q()
-        H = np.matmul(J.T, J)
-        Hinv = np.linalg.pinv(H)
-        dq = np.matmul(np.matmul(Hinv, J.T), self.err)
-        self.quat = self.quat - dq
-        self.quat = self.quat / self.quat.norm()
-
-    def solve_t(self):
-        self.forward()
-        J = self.calc_jacobian_mat_t()
-        H = np.matmul(J.T, J)
-        Hinv = np.linalg.pinv(H)
-        dt = np.matmul(np.matmul(Hinv, J.T), self.err)
-        self.t = self.t - dt
+            jcam[2 * k: 2 * k + 2, :] = derr_over_dcam(self.quat, self.t, self.fu, self.fv, pw)
+        return jcam
 
     def solve(self):
         self.forward()
@@ -171,3 +102,11 @@ class PnpSolver(Optimizer):
         dx = np.matmul(np.matmul(Hinv, J.T), self.err)
         self.quat = self.quat - dx[0:4]
         self.t = self.t - dx[4:]
+
+
+class SparseBa(Optimizer):
+    def __init__(self):
+        pass
+
+    def calc_jacobian_mat(self, *args):
+        pass
