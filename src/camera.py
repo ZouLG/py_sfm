@@ -307,6 +307,7 @@ def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=100):
                 inliers.append(i)
         return inliers
 
+    random.seed(0)
     batchNum = 8
     N = x1.shape[0]
     inlier_best = []
@@ -320,6 +321,7 @@ def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=100):
             inlier_best = inliers
             E_best = E
 
+    print("ransac inliers num: %d" % len(inlier_best))
     assert len(inlier_best) > 0
 
     # iteration: use inliers to refine E matrix

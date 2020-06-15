@@ -18,7 +18,7 @@ class Map(object):
     def get_pnp_points(self, frm):
         idx_in_frm, pw = [], []
         for i, idx in enumerate(frm.kps_idx):
-            if self.pw[idx] is not None:
+            if idx is not np.Inf and self.pw[idx] is not None:
                 idx_in_frm.append(i)
                 pw.append(self.pw[idx])
         return pw, frm.pi[idx_in_frm, :], idx_in_frm
@@ -47,6 +47,8 @@ class Map(object):
     def get_corresponding_matches(self, ref, mat):
         idx0, idx1, idx2 = [], [], []
         for i, k in enumerate(mat.kps_idx):
+            if k is np.Inf:
+                continue
             j = binary_search(ref.kps_idx, k)
             if j >= 0:
                 idx0.append(k)
@@ -59,50 +61,29 @@ class Map(object):
     def select_two_frames(self):
         pass
 
-    def init_with_2frms(self, t_scale, iter=20):
+    def reconstruct_with_2frms(self, ref, mat, t_scale):
         print("Estimating pose with 2 frames...")
-        ref, mat = self.select_two_frames()
         pi0, pi1, idx = self.get_corresponding_matches(ref, mat)
         pc0 = ref.cam.project_image2camera(pi0)
         pc1 = mat.cam.project_image2camera(pi1)
-        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-2, max_iter=70)
+        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-5, max_iter=100)
         R_list, t_list = decompose_essential_mat(E)
         R, t = check_validation_rt(R_list, t_list, pc0, pc1)
+
         mat.cam.R = np.matmul(ref.cam.R, R)
         mat.cam.t = np.matmul(ref.cam.R, t)
         mat.cam.t = mat.cam.t / np.linalg.norm(mat.cam.t) * t_scale
-        _, pw, _ = camera_triangulation(ref.cam, mat.cam, pi0, pi1)
-        err_min = ref.cam.calc_projection_error(pw, pi0) + mat.cam.calc_projection_error(pw, pi1)
-        pw_best = pw
+        pw, _, _ = camera_triangulation(ref.cam, mat.cam, pi0, pi1)
+        ref_err = ref.cam.calc_projection_error(pw, pi0)
+        mat_err = mat.cam.calc_projection_error(pw, pi1)
 
-        ratio = 0.0
-        for i in range(iter):
-            R, t = epnp.estimate_pose_epnp(mat.cam.K, pw, pi1)
-            t = t / np.linalg.norm(t) * t_scale
-            cam_tmp = PinHoleCamera(R, t, f=mat.cam.f, sx=mat.cam.sx, sy=mat.cam.sy,
-                                    img_w=mat.cam.img_w, img_h=mat.cam.img_h)
-            _, pw0, pw1 = camera_triangulation(ref.cam, cam_tmp, pi0, pi1)
-            pw = [p * ratio + q * (1 - ratio) for p, q in zip(pw0, pw1)]
-            err1 = ref.cam.calc_projection_error(pw, pi0)
-            err2 = cam_tmp.calc_projection_error(pw, pi1)
-            err = err1 + err2
-            if err < err_min:
-                err_min = err
-                mat.cam = cam_tmp
-                pw_best = pw
-
-        if err_min > self.pj_err_th:
-            print("Error: init with 2 frames failed, err = %f" % err_min)
-            mat.status = False
-            return False
-        else:
-            print("projection error = %f" % err_min)
-            for k, i in enumerate(idx):
-                self.pw[i] = pw_best[k]
-                self.slide_win_size[i] += 1
-            ref.status = True
-            mat.status = True
-            return True
+        print("projection error = %f, %f" % (ref_err, mat_err))
+        for k, i in enumerate(idx):
+            self.pw[i] = pw[k]
+        ref.pj_err = ref_err
+        mat.pj_err = mat_err
+        ref.status = True
+        mat.status = True
 
     def add_a_frame(self, frm, *args):
         # detect & match kps of the frm with the map
@@ -124,7 +105,7 @@ class Map(object):
                 img_w, img_h = gray.shape[1], gray.shape[0]
                 fx, fy = [img_w, img_h] / 2
             frm.pi, frm.des, _ = frm.detect_kps(gray, self.detector)
-            frm.kps_idx = [None] * len(frm.des)
+            frm.kps_idx = [np.Inf] * len(frm.des)
         frm.cam = PinHoleCamera(f=f, fx=fx, fy=fy, img_w=img_w, img_h=img_h)
         frm.img = color
 
@@ -143,7 +124,7 @@ class Map(object):
             pi1 = frm.pi[idx1]
             _, _, inliers = Frame.ransac_estimate_pose(pi0, pi1, ref.cam, frm.cam)
             for k in inliers:
-                if ref.kps_idx[idx0[k]] is None:
+                if ref.kps_idx[idx0[k]] is np.Inf:
                     ref.kps_idx[idx0[k]] = num
                     frm.kps_idx[idx1[k]] = num
                     self.pw.append(None)
@@ -152,10 +133,12 @@ class Map(object):
             frm.draw_kps(frm.img)
             self.match_map[cur_idx].append(len(inliers))
             self.match_map[i].append(len(inliers))
-
-        # sort the kps by its index in the map
-        # frm.sort_kps_by_idx()
+        self.match_map[cur_idx].append(0)   # match_map[i, i] = 0
         self.frames.append(frm)
+
+    def sort_kps_by_idx(self):
+        for frm in self.frames:
+            frm.sort_kps_by_idx()
 
     def localize_and_reconstruct(self):
         # estimate pose of the frame

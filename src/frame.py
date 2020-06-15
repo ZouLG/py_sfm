@@ -33,7 +33,7 @@ class Frame:
     def draw_kps(self, img, radius=5, color=(255, 0, 0)):
         draw_img = img
         for i in range(self.pi.shape[0]):
-            if self.kps_idx[i] is not None:
+            if self.kps_idx[i] is not np.Inf:
                 cv2.circle(draw_img, (int(self.pi[i, 0]), int(self.pi[i, 1])),
                            radius=radius, color=color, thickness=1)
         # draw_img = cv2.drawKeypoints(img, kps, img, color=color)
@@ -106,7 +106,7 @@ class Frame:
         pc1 = cam1.project_image2camera(pi1)
         pc2 = cam2.project_image2camera(pi2)
         try:
-            E, inliers = get_null_space_ransac(list2mat(pc1), list2mat(pc2), eps=1e-3, max_iter=15)
+            E, inliers = get_null_space_ransac(list2mat(pc1), list2mat(pc2), eps=1e-4, max_iter=100)
         except:
             print("Warning: there are not enough matching points")
             return None, None, []

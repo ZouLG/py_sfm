@@ -102,11 +102,3 @@ class PnpSolver(Optimizer):
         dx = np.matmul(np.matmul(Hinv, J.T), self.err)
         self.quat = self.quat - dx[0:4]
         self.t = self.t - dx[4:]
-
-
-class SparseBa(Optimizer):
-    def __init__(self):
-        pass
-
-    def calc_jacobian_mat(self, *args):
-        pass
