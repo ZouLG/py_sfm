@@ -186,47 +186,30 @@ def test_sfm():
     plt.figure()
     ax = plt.gca(projection='3d')
     frames = generate_data(ax)
+    plt.pause(0.001)
 
     pt_cloud = map.Map()
     for k, frm in enumerate(frames):
         pt_cloud.add_a_frame(frm)
 
-    assert pt_cloud.init_with_2frms(10, iter=20)
+    ref = pt_cloud.frames[0]
+    mat = pt_cloud.frames[1]
+    pt_cloud.sort_kps_by_idx()
+    pt_cloud.reconstruct_with_2frms(ref, mat, 100)
 
     plt.figure()
     ax = plt.gca(projection='3d')
     pt_cloud.plot_map(ax)
     set_axis_limit(ax, -20, 20, -10, 30)
     plt.pause(0.001)
-
-    for iter in range(5):
-        pt_cloud.localize_and_reconstruct()
-        plt.cla()
-        pt_cloud.plot_map(ax)
-        set_axis_limit(ax, -20, 20, -10, 30)
-        plt.pause(0.001)
-
-    print("best matches =\n", pt_cloud.best_match)
-    plt.figure()
-    ax = plt.gca(projection='3d')
-    print("start optimization...")
-    for i in range(50):
-        pt_cloud.refine_map()
-        pt_cloud.calc_projecting_err()
-        print(pt_cloud.total_err)
-        plt.cla()
-        pt_cloud.plot_map(ax)
-        set_axis_limit(ax, -20, 20, 0, 40)
-        plt.pause(0.001)
-    print([f.status for f in pt_cloud.frames])
     print("sfm task finished")
 
 
 if __name__ == "__main__":
     # plot_data()
     # generate_training_data()
-    test_pnp()
-    # test_sfm()
+    # test_pnp()
+    test_sfm()
     # test_back_end()
     # check_camera_position()
     # test_visualizer()

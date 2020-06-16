@@ -2,6 +2,7 @@ from jacobian import derr_over_dcam, derr_over_dpw
 from optimizer import Optimizer
 from map import Map
 import numpy as np
+from scipy import sparse
 from quarternion import Quarternion
 
 
@@ -9,6 +10,8 @@ class SparseBa(Optimizer):
     def __init__(self, graph):
         assert isinstance(graph, Map)
         self.graph = graph
+        self.cam_block_size = (2, 7)
+        self.point_block_size = (2, 3)
         self.j_sparse = dict()
         self.h_sparse = dict()
 

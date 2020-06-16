@@ -88,7 +88,7 @@ class Map(object):
     def add_a_frame(self, frm, *args):
         # detect & match kps of the frm with the map
         f, fx, fy, img_w, img_h = 1.0, 500, 500, 1920, 1080
-        if len(args) > 0:
+        if len(args) > 1:
             if isinstance(args[0], str):
                 resize_scale = 1
                 if len(args) > 1:
@@ -107,7 +107,6 @@ class Map(object):
             frm.pi, frm.des, _ = frm.detect_kps(gray, self.detector)
             frm.kps_idx = [np.Inf] * len(frm.des)
         frm.cam = PinHoleCamera(f=f, fx=fx, fy=fy, img_w=img_w, img_h=img_h)
-        frm.img = color
 
         cur_idx = len(self.frames)
         self.match_map.append([])
@@ -129,8 +128,6 @@ class Map(object):
                     frm.kps_idx[idx1[k]] = num
                     self.pw.append(None)
                     num += 1
-            ref.draw_kps(ref.img)
-            frm.draw_kps(frm.img)
             self.match_map[cur_idx].append(len(inliers))
             self.match_map[i].append(len(inliers))
         self.match_map[cur_idx].append(0)   # match_map[i, i] = 0

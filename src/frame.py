@@ -106,7 +106,7 @@ class Frame:
         pc1 = cam1.project_image2camera(pi1)
         pc2 = cam2.project_image2camera(pi2)
         try:
-            E, inliers = get_null_space_ransac(list2mat(pc1), list2mat(pc2), eps=1e-4, max_iter=100)
+            E, inliers = get_null_space_ransac(list2mat(pc1), list2mat(pc2), eps=1e-5, max_iter=100)
         except:
             print("Warning: there are not enough matching points")
             return None, None, []
