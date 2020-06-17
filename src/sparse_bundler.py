@@ -12,30 +12,45 @@ class SparseBa(Optimizer):
         self.graph = graph
         self.cam_block_size = (2, 7)
         self.point_block_size = (2, 3)
-        self.j_sparse = dict()
-        self.h_sparse = dict()
 
-    def __calc_sparse_jacobian__(self, frm):
-        frm_num = len(self.graph.frames)
+    def __calc_sparse_jacobian__(self, frm, frm_idx):
         for i in frm.kps_idx:
             if i is not np.Inf and self.graph.pw[i] is not None:
                 q = Quarternion.mat_to_quaternion(frm.cam.R)
                 fu = frm.cam.K[0, 0]
                 fv = frm.cam.K[1, 1]
+
                 jcam = derr_over_dcam(q, frm.cam.t, fu, fv, self.graph.pw[i])
-                self.j_sparse[(self.attribute_idx, self.landmark_idx)] = jcam
+                self.jc_data.append(jcam)
+                self.indices_c.append(frm_idx)
 
                 jpoint = derr_over_dpw(q, frm.cam.t, fu, fv, self.graph.pw[i])
-                self.j_sparse[(i + frm_num, self.landmark_idx)] = jpoint
+                self.jp_data.append(jpoint)
+                self.indices_p.append(i)
+
+                self.indptr.append(self.landmark_idx)
                 self.landmark_idx += 1
-        self.attribute_idx += 1
 
     def calc_jacobian_mat(self):
         self.landmark_idx = 0
-        self.attribute_idx = 0
-        for k, frm in enumerate(self.graph.frames):
+        self.indptr = []
+        self.jc_data, self.indices_c = [], []
+        self.jp_data, self.indices_p = [], []
+        frm_idx = 0
+        for frm in self.graph.frames:
             if frm.status is True:
-                self.__calc_sparse_jacobian__(frm)
+                self.__calc_sparse_jacobian__(frm, frm_idx)
+                frm_idx += 1
+        self.indptr.append(self.landmark_idx)
+
+        M = self.landmark_idx * 2
+        Nc = frm_idx * self.cam_block_size[1]
+        Np = len(self.graph.pw) * self.point_block_size[1]
+        self.jc = sparse.bsr_matrix((np.asarray(self.jc_data), (self.indptr, self.indices_c)),
+                                    shape=(M, Nc), blocksize=self.cam_block_size)
+        self.jp = sparse.bsr_matrix((self.jp_data, (self.indptr, self.indices_p)),
+                                    shape=(M, Np), blocksize=self.point_block_size)
+        self.j_sparse = sparse.hstack(self.jc, self.jp)
 
     def __calc_hcc__(self):
         frm_num = len(self.graph.frames)
