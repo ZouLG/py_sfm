@@ -131,8 +131,8 @@ class PinHoleCamera(object):
         ex = ex - np.matmul(ez, ex) * ez
         ex /= np.linalg.norm(ex)
         ey = np.cross(ez, ex)
-        R = np.column_stack((ex, ey, ez)).T
-        t = -np.matmul(R.T, Point3D(p).p)
+        R = np.row_stack((ex, ey, ez))
+        t = -np.matmul(R, Point3D(p).p)
         return PinHoleCamera(R, t, f=f, fx=fx, fy=fy, img_w=img_w, img_h=img_h)
 
     def show(self, ax, color='blue', s=20):

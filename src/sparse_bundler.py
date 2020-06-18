@@ -46,37 +46,14 @@ class SparseBa(Optimizer):
         M = self.landmark_idx * 2
         Nc = frm_idx * self.cam_block_size[1]
         Np = len(self.graph.pw) * self.point_block_size[1]
-        self.jc = sparse.bsr_matrix((np.asarray(self.jc_data), (self.indptr, self.indices_c)),
+        self.jc = sparse.bsr_matrix((np.asarray(self.jc_data), np.asarray(self.indptr), np.asarray(self.indices_c)),
                                     shape=(M, Nc), blocksize=self.cam_block_size)
-        self.jp = sparse.bsr_matrix((self.jp_data, (self.indptr, self.indices_p)),
+        self.jp = sparse.bsr_matrix((np.asarray(self.jp_data), np.asarray(self.indptr), np.asarray(self.indices_p)),
                                     shape=(M, Np), blocksize=self.point_block_size)
-        self.j_sparse = sparse.hstack(self.jc, self.jp)
-
-    def __calc_hcc__(self):
-        frm_num = len(self.graph.frames)
-        hcc = [np.zeros(7, 7)] * frm_num
-        for j in self.j_sparse:
-            if j[0] >= frm_num:
-                continue
-            j_mat = self.j_sparse[j]
-            hcc[j[0]] += np.matmul(j_mat.T, j_mat)
-        return hcc
-
-    def __calc_hpp__(self):
-        frm_num = len(self.graph.frames)
-        point_num = len(self.graph.pw)
-        hpp = [np.zeros(3, 3)] * point_num
-        for j in self.j_sparse:
-            if j[0] < frm_num:
-                continue
-            j_mat = self.j_sparse[j]
-            hpp[j[0] - frm_num] += np.matmul(j_mat.T, j_mat)
-        return hpp
-
-    def __calc_hcp__(self):
-        pass
+        self.j_sparse = sparse.hstack((self.jc, self.jp))
 
     def calc_block_hessian_mat(self):
-        self.h_sparse['hpp'] = self.__calc_hpp__()
-        self.h_sparse['hcc'] = self.__calc_hcc__()
-        self.h_sparse['hcp'] = self.__calc_hcp__()
+        self.h_sparse = dict()
+        self.h_sparse['hpp'] = self.jp.transpose() * self.jp
+        self.h_sparse['hcc'] = self.jc.transpose() * self.jc
+        self.h_sparse['hcp'] = self.jc.transpose() * self.jp

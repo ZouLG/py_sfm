@@ -25,7 +25,6 @@ class Sfm(object):
         self.map.reconstruct_with_2frms(ref, mat, 100)
 
         self.ba.calc_jacobian_mat()
-
         self.map.plot_map(ax)
 
 

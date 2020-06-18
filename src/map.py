@@ -105,7 +105,8 @@ class Map(object):
                 img_w, img_h = gray.shape[1], gray.shape[0]
                 fx, fy = [img_w, img_h] / 2
             frm.pi, frm.des, _ = frm.detect_kps(gray, self.detector)
-            frm.kps_idx = [np.Inf] * len(frm.des)
+
+        frm.kps_idx = [np.Inf] * len(frm.des)
         frm.cam = PinHoleCamera(f=f, fx=fx, fy=fy, img_w=img_w, img_h=img_h)
 
         cur_idx = len(self.frames)

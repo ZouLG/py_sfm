@@ -21,6 +21,7 @@ class Frame:
         self.kps_idx = [None] * len(des)
         self.pj_err = np.Inf
         self.img = None     # for test use
+        self.status = False
 
     @staticmethod
     def detect_kps(img, detector):
