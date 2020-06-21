@@ -14,6 +14,7 @@ class Map(object):
         self.pj_err_th = 10
         self.total_err = 0
         self.detector = cv2.xfeatures2d_SIFT.create()
+        self.scale = 30
 
     def get_pnp_points(self, frm):
         idx_in_frm, pw = [], []
@@ -61,18 +62,18 @@ class Map(object):
     def select_two_frames(self):
         pass
 
-    def reconstruct_with_2frms(self, ref, mat, t_scale):
+    def reconstruct_with_2frms(self, ref, mat):
         print("Estimating pose with 2 frames...")
         pi0, pi1, idx = self.get_corresponding_matches(ref, mat)
         pc0 = ref.cam.project_image2camera(pi0)
         pc1 = mat.cam.project_image2camera(pi1)
-        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-5, max_iter=100)
+        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-4, max_iter=200)
         R_list, t_list = decompose_essential_mat(E)
         R, t = check_validation_rt(R_list, t_list, pc0, pc1)
 
         mat.cam.R = np.matmul(ref.cam.R, R)
         mat.cam.t = np.matmul(ref.cam.R, t)
-        mat.cam.t = mat.cam.t / np.linalg.norm(mat.cam.t) * t_scale
+        mat.cam.t = mat.cam.t / np.linalg.norm(mat.cam.t) * self.scale
         pw, _, _ = camera_triangulation(ref.cam, mat.cam, pi0, pi1)
         ref_err = ref.cam.calc_projection_error(pw, pi0)
         mat_err = mat.cam.calc_projection_error(pw, pi1)

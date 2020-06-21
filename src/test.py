@@ -1,7 +1,3 @@
-import numpy as np
-from matplotlib import pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from point import *
 from camera import *
 from geometry import *
 import epnp
@@ -10,6 +6,7 @@ from frame import Frame
 from quarternion import Quarternion
 from optimizer import PnpSolver
 from utils import set_axis_limit
+from sparse_bundler import SparseBa
 
 
 def plot_data(cameras, pw):
@@ -151,15 +148,15 @@ def test_sfm():
 
     def generate_data(ax):
         f = 1.05
-        noise_sigma = 7
+        noise_sigma = 5
         # pw = generate_rand_points(100, [0, 0, 0], [10, 10, 10])
-        pw = generate_sphere_points(100, Point3D((0, 0, 0)), 20)
+        pw = generate_sphere_points(200, Point3D((0, 0, 0)), 20)
         des = np.random.uniform(0, 128, (len(pw), 128))
         des = des.astype(np.float32)
 
         # generate frames
         cams, pi, frms = [], [], []
-        theta = np.linspace(0.0, np.pi * 1.7, 7)
+        theta = np.linspace(0.0, np.pi * 0.2, 2)
         center = 15 * np.column_stack((np.zeros(theta.shape), np.cos(theta), np.sin(theta)))
         z_axis = [-center[i, :] for i in range(theta.shape[0])]
 
@@ -195,12 +192,15 @@ def test_sfm():
     ref = pt_cloud.frames[0]
     mat = pt_cloud.frames[1]
     pt_cloud.sort_kps_by_idx()
-    pt_cloud.reconstruct_with_2frms(ref, mat, 100)
+    pt_cloud.reconstruct_with_2frms(ref, mat)
+    ba = SparseBa(pt_cloud)
+    for i in range(10):
+        ba.solve()
 
     plt.figure()
     ax = plt.gca(projection='3d')
     pt_cloud.plot_map(ax)
-    set_axis_limit(ax, -20, 20, -10, 30)
+    set_axis_limit(ax, -100, 100, -10, 190)
     plt.pause(0.001)
     print("sfm task finished")
 

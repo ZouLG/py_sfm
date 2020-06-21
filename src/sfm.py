@@ -22,9 +22,11 @@ class Sfm(object):
         mat = self.map.frames[1]
 
         self.map.sort_kps_by_idx()
-        self.map.reconstruct_with_2frms(ref, mat, 100)
+        self.map.reconstruct_with_2frms(ref, mat)
 
-        self.ba.calc_jacobian_mat()
+        for i in range(5):
+            self.ba.solve()
+
         self.map.plot_map(ax)
 
 

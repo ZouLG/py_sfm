@@ -3,6 +3,7 @@ from optimizer import Optimizer
 from map import Map
 import numpy as np
 from scipy import sparse
+from scipy.sparse import linalg
 from quarternion import Quarternion
 
 
@@ -46,14 +47,57 @@ class SparseBa(Optimizer):
         M = self.landmark_idx * 2
         Nc = frm_idx * self.cam_block_size[1]
         Np = len(self.graph.pw) * self.point_block_size[1]
-        self.jc = sparse.bsr_matrix((np.asarray(self.jc_data), np.asarray(self.indptr), np.asarray(self.indices_c)),
+        self.jc = sparse.bsr_matrix((np.asarray(self.jc_data), np.asarray(self.indices_c), np.asarray(self.indptr)),
                                     shape=(M, Nc), blocksize=self.cam_block_size)
-        self.jp = sparse.bsr_matrix((np.asarray(self.jp_data), np.asarray(self.indptr), np.asarray(self.indices_p)),
+        self.jp = sparse.bsr_matrix((np.asarray(self.jp_data), np.asarray(self.indices_p), np.asarray(self.indptr)),
                                     shape=(M, Np), blocksize=self.point_block_size)
         self.j_sparse = sparse.hstack((self.jc, self.jp))
 
+    def __calc_reprojection_err__(self, frm):
+        for k, i in enumerate(frm.kps_idx):
+            if i is not np.Inf and self.graph.pw[i] is not None:
+                pi_, _ = frm.cam.project_world2image([self.graph.pw[i]])
+                self.rpj_err.append(pi_ - frm.pi[k, :])
+
+    def calc_reprojection_err(self):
+        self.rpj_err = []
+        for frm in self.graph.frames:
+            if frm.status is True:
+                self.__calc_reprojection_err__(frm)
+        self.rpj_err = np.squeeze(np.column_stack(self.rpj_err))
+        self.loss = np.sum(np.square(self.rpj_err)) / len(self.rpj_err)
+
     def calc_block_hessian_mat(self):
-        self.h_sparse = dict()
-        self.h_sparse['hpp'] = self.jp.transpose() * self.jp
-        self.h_sparse['hcc'] = self.jc.transpose() * self.jc
-        self.h_sparse['hcp'] = self.jc.transpose() * self.jp
+        self.hpp = self.jp.transpose() * self.jp
+        self.hcc = self.jc.transpose() * self.jc
+        self.hcp = self.jc.transpose() * self.jp
+        self.hpc = self.hcp.transpose()
+
+    def solve(self):
+        self.calc_jacobian_mat()
+        self.calc_reprojection_err()
+        self.calc_block_hessian_mat()
+        print(self.loss)
+
+        # hpp_inv = linalg.inv(self.hpp.tocsc())
+        hpp_inv = sparse.lil_matrix(np.linalg.pinv(self.hpp.toarray()))
+        bc = self.jc.transpose() * self.rpj_err
+        bp = self.jp.transpose() * self.rpj_err
+
+        schur = self.hcc - self.hcp * hpp_inv * self.hpc
+        b = self.hcp * hpp_inv * bp - bc
+        dxc = np.matmul(np.linalg.pinv(schur.toarray()), b)
+        dxp = -hpp_inv * (bp + self.hpc * dxc)
+
+        k = 0
+        for frm in self.graph.frames:
+            if frm.status is True:
+                frm.cam.q += dxc[k: k + 4]
+                frm.cam.t += dxc[k + 4: k + 7]
+                k += 7
+
+        k = 0
+        for p in self.graph.pw:
+            if p is not None:
+                p.p += dxp[k: k + 3]
+                k += 3

@@ -3,6 +3,7 @@ import random
 from point import Point3D, list2mat, mat2list
 import geometry as geo
 import cv2
+from quarternion import Quarternion
 
 
 def point_project2line(o, n, p):
@@ -76,6 +77,7 @@ class PinHoleCamera(object):
         assert (np.abs(np.matmul(R, R.T) - np.eye(3)) < 1e-7).all(), "rotation mat should be Orthogonal"
         self.__dict__['R'] = R
         self.__dict__['t'] = t
+        self.__dict__['q'] = Quarternion.mat_to_quaternion(R)
 
         # intrinsic params
         f, fx, fy, img_w, img_h = [1.0, 500, 500, 1920, 1080]
@@ -95,6 +97,8 @@ class PinHoleCamera(object):
             fy = K[1, 1]
             img_w = K[0, 2] * 2
             img_h = K[1, 2] * 2
+        if 'q' in kwargs:
+            pass
 
         self.__dict__['f'] = f
         self.__dict__['fx'] = fx
@@ -120,7 +124,13 @@ class PinHoleCamera(object):
             self.__dict__['fy'] = value[1, 1]
             self.__dict__['img_w'] = value[0, 2] * 2
             self.__dict__['img_h'] = value[1, 2] * 2
-        elif key not in ['f', 'R', 't']:
+        elif key == 'q':
+            self.__dict__['q'] = Quarternion(value)
+            self.__dict__['R'] = Quarternion.quaternion_to_mat(value)
+        elif key == 'R':
+            self.__dict__['R'] = value
+            self.__dict__['q'] = Quarternion.mat_to_quaternion(value)
+        elif key not in ['f', 't']:
             raise AttributeError
         self.__dict__[key] = value
         self.__dict__['K_'] = np.linalg.pinv(self.K)
