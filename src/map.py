@@ -14,7 +14,7 @@ class Map(object):
         self.pj_err_th = 10
         self.total_err = 0
         self.detector = cv2.xfeatures2d_SIFT.create()
-        self.scale = 30
+        self.scale = 100
 
     def get_pnp_points(self, frm):
         idx_in_frm, pw = [], []
@@ -67,7 +67,7 @@ class Map(object):
         pi0, pi1, idx = self.get_corresponding_matches(ref, mat)
         pc0 = ref.cam.project_image2camera(pi0)
         pc1 = mat.cam.project_image2camera(pi1)
-        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-4, max_iter=200)
+        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-4, max_iter=100)
         R_list, t_list = decompose_essential_mat(E)
         R, t = check_validation_rt(R_list, t_list, pc0, pc1)
 
@@ -125,7 +125,7 @@ class Map(object):
             pi1 = frm.pi[idx1]
             _, _, inliers = Frame.ransac_estimate_pose(pi0, pi1, ref.cam, frm.cam)
             for k in inliers:
-                if ref.kps_idx[idx0[k]] is np.Inf:
+                if ref.kps_idx[idx0[k]] is np.Inf and frm.kps_idx[idx1[k]] is np.Inf:
                     ref.kps_idx[idx0[k]] = num
                     frm.kps_idx[idx1[k]] = num
                     self.pw.append(None)
@@ -138,6 +138,30 @@ class Map(object):
     def sort_kps_by_idx(self):
         for frm in self.frames:
             frm.sort_kps_by_idx()
+
+    def get_variables(self):
+        variables = []
+        for frm in self.frames:
+            if frm.status is True:
+                variables.append(frm.cam.q.q)
+                variables.append(frm.cam.t)
+        for p in self.pw:
+            if p is not None:
+                variables.append(p.p)
+        return np.concatenate(variables).copy()
+
+    def set_variables(self, var):
+        k = 0
+        for frm in self.frames:
+            if frm.status is True:
+                frm.cam.q = Quarternion(var[k: k + 4])
+                frm.cam.t = var[k + 4: k + 7]
+                k += 7
+
+        for p in self.pw:
+            if p is not None:
+                p.p = var[k: k + 3]
+                k += 3
 
     def localize_and_reconstruct(self):
         # estimate pose of the frame

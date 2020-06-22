@@ -148,7 +148,7 @@ def test_sfm():
 
     def generate_data(ax):
         f = 1.05
-        noise_sigma = 5
+        noise_sigma = 7
         # pw = generate_rand_points(100, [0, 0, 0], [10, 10, 10])
         pw = generate_sphere_points(200, Point3D((0, 0, 0)), 20)
         des = np.random.uniform(0, 128, (len(pw), 128))

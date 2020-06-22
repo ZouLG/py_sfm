@@ -16,7 +16,7 @@ class Sfm(object):
         plt.figure()
         ax = plt.gca(projection='3d')
         for k, img in enumerate(self.img_name_list):
-            if k < 2:
+            if k < 3:
                 self.map.add_a_frame(Frame(), img, 4)
         ref = self.map.frames[0]
         mat = self.map.frames[1]
@@ -24,8 +24,9 @@ class Sfm(object):
         self.map.sort_kps_by_idx()
         self.map.reconstruct_with_2frms(ref, mat)
 
-        for i in range(5):
-            self.ba.solve()
+        # for i in range(5):
+        #     self.ba.solve()
+        self.ba.solve_lm()
 
         self.map.plot_map(ax)
 
