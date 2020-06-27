@@ -13,8 +13,9 @@ class SparseBa(Optimizer):
         self.graph = graph
         self.cam_block_size = (2, 7)
         self.point_block_size = (2, 3)
-        self.radius = 0.002
+        self.radius = 0.02
         self.loss = np.Inf
+        self.iter_num = 5
 
     def __calc_sparse_jacobian__(self, frm, frm_idx):
         for i in frm.kps_idx:
@@ -47,8 +48,8 @@ class SparseBa(Optimizer):
         self.indptr.append(self.landmark_idx)
 
         M = self.landmark_idx * 2
-        Nc = frm_idx * self.cam_block_size[1]
-        Np = len(self.graph.pw) * self.point_block_size[1]
+        Nc = self.graph.fixed_frm_num * self.cam_block_size[1]
+        Np = self.graph.fixed_pt_num * self.point_block_size[1]     # number of points with fixed coordinates
         self.jc = sparse.bsr_matrix((np.asarray(self.jc_data), np.asarray(self.indices_c),
                         np.asarray(self.indptr)), shape=(M, Nc), blocksize=self.cam_block_size)
         self.jp = sparse.bsr_matrix((np.asarray(self.jp_data), np.asarray(self.indices_p),
@@ -120,7 +121,7 @@ class SparseBa(Optimizer):
 
             try_iter = 0
             terminate_flag = True
-            while try_iter < 10:
+            while try_iter < self.iter_num:
                 try_iter += 1
                 hcc = self.hcc + self.radius * sparse.eye(self.hcc.shape[0])
                 hpp = self.hpp + self.radius * sparse.eye(self.hpp.shape[0])
@@ -136,5 +137,5 @@ class SparseBa(Optimizer):
                 else:
                     self.radius *= 10
 
-            if terminate_flag or iteration >= 10:
+            if terminate_flag or iteration >= self.iter_num:
                 break

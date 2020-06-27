@@ -156,7 +156,7 @@ def test_sfm():
 
         # generate frames
         cams, pi, frms = [], [], []
-        theta = np.linspace(0.0, np.pi * 0.2, 2)
+        theta = np.linspace(0.0, np.pi * 0.3, 3)
         center = 15 * np.column_stack((np.zeros(theta.shape), np.cos(theta), np.sin(theta)))
         z_axis = [-center[i, :] for i in range(theta.shape[0])]
 
@@ -191,11 +191,16 @@ def test_sfm():
 
     ref = pt_cloud.frames[0]
     mat = pt_cloud.frames[1]
-    pt_cloud.sort_kps_by_idx()
-    pt_cloud.reconstruct_with_2frms(ref, mat)
+    pt_cloud.sort_kps_in_frame()
+    pt_cloud.init_with_2frames(ref, mat)
     ba = SparseBa(pt_cloud)
-    for i in range(10):
-        ba.solve()
+    ba.solve_lm()
+
+    for frm in pt_cloud.frames:
+        print("frm %d" % frm.frm_idx)
+        pt_cloud.localization(frm)
+        pt_cloud.reconstruction(frm)
+        ba.solve_lm()
 
     plt.figure()
     ax = plt.gca(projection='3d')

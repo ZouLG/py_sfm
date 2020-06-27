@@ -20,15 +20,21 @@ class Frame:
 
         self.kps_idx = [None] * len(des)
         self.pj_err = np.Inf
+        self.frm_idx = None
         self.status = False
+        # self.img_data = None # for debug use
 
     @staticmethod
-    def detect_kps(img, detector):
-        kps, des = detector.detectAndCompute(img, None)
-        pi = np.zeros((len(kps), 2))
-        for i in range(len(kps)):
-            pi[i, :] = kps[i].pt
-        return pi, des, kps
+    def detect_kps(img, detector, response_th=0.02):
+        kps_all, des_all = detector.detectAndCompute(img, None)
+        pi, des = [], []
+        for i, kp in enumerate(kps_all):
+            if kp.response < response_th:
+                continue
+            pi.append(np.array(kp.pt))
+            des.append(des_all[i])
+        pi = np.row_stack(pi)
+        return pi, des
 
     def draw_kps(self, img, radius=5, color=(255, 0, 0)):
         draw_img = img
@@ -106,7 +112,7 @@ class Frame:
         pc1 = cam1.project_image2camera(pi1)
         pc2 = cam2.project_image2camera(pi2)
         try:
-            E, inliers = get_null_space_ransac(list2mat(pc1), list2mat(pc2), eps=1e-4, max_iter=100)
+            E, inliers = get_null_space_ransac(list2mat(pc1), list2mat(pc2), eps=1e-5, max_iter=500)
         except:
             print("Warning: there are not enough matching points")
             return None, None, []

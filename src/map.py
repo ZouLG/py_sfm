@@ -14,7 +14,7 @@ class Map(object):
         self.pj_err_th = 10
         self.total_err = 0
         self.detector = cv2.xfeatures2d_SIFT.create()
-        self.scale = 100
+        self.scale = 20
 
     def get_pnp_points(self, frm):
         idx_in_frm, pw = [], []
@@ -25,25 +25,35 @@ class Map(object):
         return pw, frm.pi[idx_in_frm, :], idx_in_frm
 
     def localization(self, frm):
-        pw, pi, _ = self.get_epnp_points(frm)
+        if frm.status is True:
+            return
+        pw, pi, _ = self.get_pnp_points(frm)
         if len(pw) < 8:
             print("Warning: too few key points")
             return
-        R, t = epnp.ransac_estimate_pose(frm.cam.K, pw, pi, iter=70)
-        cam_tmp = PinHoleCamera(R, t, frm.cam.K)
-        err = cam_tmp.calc_projection_error(pw, pi)
-        if err < frm.pj_err:
-            frm.cam = cam_tmp
+        frm.cam.R, frm.cam.t, _ = epnp.ransac_estimate_pose(frm.cam.K, pw, pi, iter=100)
+        err = frm.cam.calc_projection_error(pw, pi)
+        if err < self.pj_err_th:
             frm.pj_err = err
-            frm.status = err < self.pj_err_th
+            frm.status = True
+
+    def __reconstruct_with_2frames__(self, frm1, frm2):
+        pi1, pi2, idx = self.get_corresponding_matches(frm1, frm2)
+        pw, _, _ = camera_triangulation(frm1.cam, frm2.cam, pi1, pi2)
+        err1 = frm1.cam.calc_projection_error(pw, pi1)
+        err2 = frm2.cam.calc_projection_error(pw, pi2)
+        for i, k in enumerate(idx):
+            if self.pw[k] is None:
+                self.pw[k] = pw[i]
 
     def reconstruction(self, frm):
         if frm.status is False:
             return
-        pw, pi, idx = self.get_epnp_points(frm)
-        pw_pj = bundle_projection(frm.cam, pw, pi)
-        for k, p in zip(idx, pw_pj):
-            self.__slide_mean_update_points(frm.kps_idx[k], p)
+        for i, m in enumerate(self.match_map[frm.frm_idx]):
+            ref = self.frames[i]
+            if m < 10 or ref.status is False:
+                continue
+            self.__reconstruct_with_2frames__(frm, ref)
 
     def get_corresponding_matches(self, ref, mat):
         idx0, idx1, idx2 = [], [], []
@@ -62,12 +72,12 @@ class Map(object):
     def select_two_frames(self):
         pass
 
-    def reconstruct_with_2frms(self, ref, mat):
+    def init_with_2frames(self, ref, mat):
         print("Estimating pose with 2 frames...")
         pi0, pi1, idx = self.get_corresponding_matches(ref, mat)
         pc0 = ref.cam.project_image2camera(pi0)
         pc1 = mat.cam.project_image2camera(pi1)
-        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-4, max_iter=100)
+        E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-5, max_iter=500)
         R_list, t_list = decompose_essential_mat(E)
         R, t = check_validation_rt(R_list, t_list, pc0, pc1)
 
@@ -85,6 +95,7 @@ class Map(object):
         mat.pj_err = mat_err
         ref.status = True
         mat.status = True
+        self.get_attribute_dim()
 
     def add_a_frame(self, frm, *args):
         # detect & match kps of the frm with the map
@@ -101,16 +112,18 @@ class Map(object):
                 fy /= resize_scale
                 color = cv2.resize(cv2.imread(args[0]), (img_w, img_h))
                 gray = cv2.cvtColor(color, cv2.COLOR_RGB2GRAY)
+                # frm.img_data = color    # for debug use
             elif isinstance(args[0], np.ndarray):
                 gray = args[0]
                 img_w, img_h = gray.shape[1], gray.shape[0]
                 fx, fy = [img_w, img_h] / 2
-            frm.pi, frm.des, _ = frm.detect_kps(gray, self.detector)
+            frm.pi, frm.des = frm.detect_kps(gray, self.detector)
 
         frm.kps_idx = [np.Inf] * len(frm.des)
         frm.cam = PinHoleCamera(f=f, fx=fx, fy=fy, img_w=img_w, img_h=img_h)
 
         cur_idx = len(self.frames)
+        frm.frm_idx = cur_idx
         self.match_map.append([])
         if cur_idx == 0:   # if is the first frame
             self.frames.append(frm)
@@ -135,9 +148,44 @@ class Map(object):
         self.match_map[cur_idx].append(0)   # match_map[i, i] = 0
         self.frames.append(frm)
 
-    def sort_kps_by_idx(self):
+    def sort_kps_in_frame(self):
         for frm in self.frames:
             frm.sort_kps_by_idx()
+
+    def sort_kps(self):
+        idx = list(range(len(self.pw)))
+        m, n = 0, len(self.pw) - 1
+        while m < n:
+            if self.pw[m] is not None:
+                m += 1
+                continue
+            if self.pw[n] is None:
+                n -= 1
+                continue
+
+            idx[n] = m
+            idx[m] = n
+            tmp = self.pw[m]
+            self.pw[m] = self.pw[n]
+            self.pw[n] = tmp
+            m += 1
+            n -= 1
+
+        for frm in self.frames:
+            for i, kp in enumerate(frm.kps_idx):
+                if kp is not np.Inf:
+                    frm.kps_idx[i] = idx[kp]
+
+    def get_attribute_dim(self):
+        self.fixed_frm_num = 0
+        for frm in self.frames:
+            if frm.status is True:
+                self.fixed_frm_num += 1
+
+        self.fixed_pt_num = 0
+        for p in self.pw:
+            if p is not None:
+                self.fixed_pt_num += 1
 
     def get_variables(self):
         variables = []

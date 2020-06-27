@@ -18,15 +18,23 @@ class Sfm(object):
         for k, img in enumerate(self.img_name_list):
             if k < 3:
                 self.map.add_a_frame(Frame(), img, 4)
-        ref = self.map.frames[0]
-        mat = self.map.frames[1]
+        frm1 = self.map.frames[0]
+        frm2 = self.map.frames[1]
+        frm3 = self.map.frames[2]
+        # frm1.draw_kps(frm1.img_data)
+        # frm2.draw_kps(frm2.img_data)
+        # frm3.draw_kps(frm3.img_data)
 
-        self.map.sort_kps_by_idx()
-        self.map.reconstruct_with_2frms(ref, mat)
-
-        # for i in range(5):
-        #     self.ba.solve()
+        self.map.sort_kps_in_frame()
+        self.map.init_with_2frames(frm2, frm3)
+        self.map.sort_kps()
         self.ba.solve_lm()
+
+        # for frm in self.map.frames:
+        #     print("frm %d" % frm.frm_idx)
+        #     self.map.localization(frm)
+        #     self.map.reconstruction(frm)
+        #     self.ba.solve_lm()
 
         self.map.plot_map(ax)
 
