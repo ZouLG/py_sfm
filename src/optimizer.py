@@ -55,7 +55,7 @@ class EpnpSolver(Optimizer):
         self.Jij = Jij
         return Jij
 
-    def sovle(self):
+    def solve(self):
         J = self.calc_jacobian_mat()
         H = np.matmul(J.T, J)
         b = np.squeeze(-np.matmul(J.T, self.eij ** 2))

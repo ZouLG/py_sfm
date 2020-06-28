@@ -26,15 +26,15 @@ class Sfm(object):
         # frm3.draw_kps(frm3.img_data)
 
         self.map.sort_kps_in_frame()
-        self.map.init_with_2frames(frm2, frm3)
+        self.map.init_with_2frames(frm1, frm2)
+
         self.map.sort_kps()
         self.ba.solve_lm()
 
-        # for frm in self.map.frames:
-        #     print("frm %d" % frm.frm_idx)
-        #     self.map.localization(frm)
-        #     self.map.reconstruction(frm)
-        #     self.ba.solve_lm()
+        self.map.localization(frm3)
+        self.map.reconstruction(frm3)
+        self.map.sort_kps()
+        self.ba.solve_lm()
 
         self.map.plot_map(ax)
 

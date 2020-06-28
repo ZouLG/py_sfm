@@ -59,7 +59,7 @@ def gauss_newtown_refine(beta, data, target):
     solver = EpnpSolver(beta, data, target)
     i = 0
     while solver.residual > 1e-3 and i < 500:
-        solver.sovle()
+        solver.solve()
         i += 1
         print(solver.residual)
     return solver.coef
@@ -147,7 +147,7 @@ def estimate_pose_epnp(K, pw, pi, ctrl_num=4):
     # fine-tune beta
     k = 0
     while solver.residual > 5e-3 and k < 15:
-        solver.sovle()
+        solver.solve()
         k += 1
         # print("error after %d iterations: %f" % (k, solver.residual))
     # print("error after fine-tune: %f" % solver.residual)
@@ -192,11 +192,11 @@ def ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
     inlier_best = []
     for i in range(iter):
         index = random.sample(range(N), batch_num)
-        if False:   #geo.is_co_plannar(pw[index]):
+        if False:   # geo.is_co_plannar(pw[index]):
             continue
         pw_tmp, pi_tmp = get_by_idx(pw, pi, index)
         R, t = estimate_pose_epnp(K, pw_tmp, pi_tmp)
-        cam = PinHoleCamera(R, t, f=K[0, 0] * 0.002)     # sx = 0.002
+        cam = PinHoleCamera(R, t, K=K)
         inliers = get_inliers(cam, pw, pi, threshold)
         if len(inliers) > len(inlier_best):
             inlier_best = inliers
@@ -205,13 +205,13 @@ def ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
         print("Warning: not enough inliers, inlier = %d" % len(inlier_best))
         inlier_best = list(range(len(pw)))
 
-    pw_tmp, pi_tmp = get_by_idx(pw, pi, index)
+    pw_tmp, pi_tmp = get_by_idx(pw, pi, inlier_best)
     R_best, t_best = estimate_pose_epnp(K, pw_tmp, pi_tmp)
 
     while True:
         pw_tmp, pi_tmp = get_by_idx(pw, pi, inlier_best)
         R, t = estimate_pose_epnp(K, pw_tmp, pi_tmp)
-        cam = PinHoleCamera(R, t, f=K[0, 0] * 0.002)     # sx = 0.002
+        cam = PinHoleCamera(R, t, K=K)     # sx = 0.002
         inliers = get_inliers(cam, pw, pi, threshold)
         if len(inliers) > len(inlier_best):
             inlier_best = inliers

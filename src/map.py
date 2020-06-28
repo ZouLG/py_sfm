@@ -29,7 +29,7 @@ class Map(object):
             return
         pw, pi, _ = self.get_pnp_points(frm)
         if len(pw) < 8:
-            print("Warning: too few key points")
+            print("Warning: frame %d has too few key points" % frm.frm_idx)
             return
         frm.cam.R, frm.cam.t, _ = epnp.ransac_estimate_pose(frm.cam.K, pw, pi, iter=100)
         err = frm.cam.calc_projection_error(pw, pi)
@@ -143,6 +143,12 @@ class Map(object):
                     frm.kps_idx[idx1[k]] = num
                     self.pw.append(None)
                     num += 1
+                elif ref.kps_idx[idx0[k]] is not np.Inf and frm.kps_idx[idx1[k]] is np.Inf:
+                    frm.kps_idx[idx1[k]] = ref.kps_idx[idx0[k]]
+                elif ref.kps_idx[idx0[k]] is not np.Inf and frm.kps_idx[idx1[k]] is np.Inf:
+                    ref.kps_idx[idx0[k]] = frm.kps_idx[idx1[k]]
+                else:
+                    pass
             self.match_map[cur_idx].append(len(inliers))
             self.match_map[i].append(len(inliers))
         self.match_map[cur_idx].append(0)   # match_map[i, i] = 0
@@ -175,6 +181,7 @@ class Map(object):
             for i, kp in enumerate(frm.kps_idx):
                 if kp is not np.Inf:
                     frm.kps_idx[i] = idx[kp]
+            frm.sort_kps_by_idx()
 
     def get_attribute_dim(self):
         self.fixed_frm_num = 0
@@ -263,6 +270,6 @@ class Map(object):
             if p is not None:
                 p.plot3d(ax, marker='.', color='blue', s=10)
 
-        for frm in self.frames:
-            if frm.status is True:
-                frm.cam.show(ax)
+        # for frm in self.frames:
+        #     if frm.status is True:
+        #         frm.cam.show(ax)
