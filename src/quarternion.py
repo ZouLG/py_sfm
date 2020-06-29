@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial.transform.rotation import Rotation
 
 
 class Quarternion(object):
@@ -53,18 +54,20 @@ class Quarternion(object):
 
     @staticmethod
     def quaternion_to_mat(q):
-        q0, q1, q2, q3 = q / q.norm()
-        rx = 2 * np.array([0.5 - q2 * q2 - q3 * q3, q1 * q2 - q0 * q3, q1 * q3 + q0 * q2])
-        ry = 2 * np.array([q1 * q2 + q0 * q3, 0.5 - q1 ** 2 - q3 ** 2, q2 * q3 - q0 * q1])
-        rz = 2 * np.array([q1 * q3 - q0 * q2, q2 * q3 + q0 * q1, 0.5 - q1 ** 2 - q2 ** 2])
-        return np.row_stack([rx, ry, rz])
+        return Rotation.from_quat([q[1], q[2], q[3], q[0]]).as_matrix()
+        # q0, q1, q2, q3 = q / q.norm()
+        # rx = 2 * np.array([0.5 - q2 * q2 - q3 * q3, q1 * q2 - q0 * q3, q1 * q3 + q0 * q2])
+        # ry = 2 * np.array([q1 * q2 + q0 * q3, 0.5 - q1 ** 2 - q3 ** 2, q2 * q3 - q0 * q1])
+        # rz = 2 * np.array([q1 * q3 - q0 * q2, q2 * q3 + q0 * q1, 0.5 - q1 ** 2 - q2 ** 2])
+        # return np.row_stack([rx, ry, rz])
 
     @staticmethod
     def mat_to_quaternion(R):
-        q0 = np.sqrt(np.trace(R) + 1) / 2
-        q1 = (R[2, 1] - R[1, 2]) / q0 / 4
-        q2 = (R[0, 2] - R[2, 0]) / q0 / 4
-        q3 = (R[1, 0] - R[0, 1]) / q0 / 4
+        q1, q2, q3, q0 = Rotation.from_matrix(R).as_quat()
+        # q0 = np.sqrt(np.trace(R) + 1) / 2
+        # q1 = (R[2, 1] - R[1, 2]) / q0 / 4
+        # q2 = (R[0, 2] - R[2, 0]) / q0 / 4
+        # q3 = (R[1, 0] - R[0, 1]) / q0 / 4
         return Quarternion((q0, q1, q2, q3))
 
     @staticmethod

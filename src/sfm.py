@@ -16,14 +16,10 @@ class Sfm(object):
         plt.figure()
         ax = plt.gca(projection='3d')
         for k, img in enumerate(self.img_name_list):
-            if k < 3:
+            if k < 5:
                 self.map.add_a_frame(Frame(), img, 4)
         frm1 = self.map.frames[0]
-        frm2 = self.map.frames[1]
-        frm3 = self.map.frames[2]
-        # frm1.draw_kps(frm1.img_data)
-        # frm2.draw_kps(frm2.img_data)
-        # frm3.draw_kps(frm3.img_data)
+        frm2 = self.map.frames[2]
 
         self.map.sort_kps_in_frame()
         self.map.init_with_2frames(frm1, frm2)
@@ -31,12 +27,16 @@ class Sfm(object):
         self.map.sort_kps()
         self.ba.solve_lm()
 
-        self.map.localization(frm3)
-        self.map.reconstruction(frm3)
-        self.map.sort_kps()
-        self.ba.solve_lm()
+        for frm in self.map.frames:
+            if frm.status is True:
+                continue
+            self.map.localization(frm)
+            self.map.reconstruction(frm)
+            self.map.sort_kps()
+            self.ba.solve_lm()
 
         self.map.plot_map(ax)
+        set_axis_limit(ax, -70, 70, 30, 170)
 
 
 if __name__ == "__main__":

@@ -148,15 +148,15 @@ def test_sfm():
 
     def generate_data(ax):
         f = 1.05
-        noise_sigma = 7
+        noise_sigma = 5
         # pw = generate_rand_points(100, [0, 0, 0], [10, 10, 10])
-        pw = generate_sphere_points(200, Point3D((0, 0, 0)), 20)
+        pw = generate_sphere_points(300, Point3D((0, 0, 0)), 20)
         des = np.random.uniform(0, 128, (len(pw), 128))
         des = des.astype(np.float32)
 
         # generate frames
         cams, pi, frms = [], [], []
-        theta = np.linspace(0.0, np.pi * 0.3, 3)
+        theta = np.linspace(0.0, np.pi * 1.0, 5)
         center = 15 * np.column_stack((np.zeros(theta.shape), np.cos(theta), np.sin(theta)))
         z_axis = [-center[i, :] for i in range(theta.shape[0])]
 
@@ -186,26 +186,31 @@ def test_sfm():
     plt.pause(0.001)
 
     pt_cloud = map.Map()
+    ba = SparseBa(pt_cloud)
     for k, frm in enumerate(frames):
         pt_cloud.add_a_frame(frm)
 
-    ref = pt_cloud.frames[0]
-    mat = pt_cloud.frames[1]
+    frm0 = pt_cloud.frames[0]
+    frm1 = pt_cloud.frames[1]
     pt_cloud.sort_kps_in_frame()
-    pt_cloud.init_with_2frames(ref, mat)
-    ba = SparseBa(pt_cloud)
+    pt_cloud.init_with_2frames(frm0, frm1)
+
+    pt_cloud.sort_kps()
     ba.solve_lm()
 
     for frm in pt_cloud.frames:
-        print("frm %d" % frm.frm_idx)
+        if frm.status is True:
+            continue
+        print("localize frm %d..." % frm.frm_idx)
         pt_cloud.localization(frm)
         pt_cloud.reconstruction(frm)
+        pt_cloud.sort_kps()
         ba.solve_lm()
 
     plt.figure()
     ax = plt.gca(projection='3d')
     pt_cloud.plot_map(ax)
-    set_axis_limit(ax, -100, 100, -10, 190)
+    set_axis_limit(ax, -50, 50, 0, 100)
     plt.pause(0.001)
     print("sfm task finished")
 

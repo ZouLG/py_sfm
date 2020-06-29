@@ -11,10 +11,12 @@ class Map(object):
 
         self.match_map = []
         self.status = False
-        self.pj_err_th = 10
+        self.pj_err_th = 100
         self.total_err = 0
         self.detector = cv2.xfeatures2d_SIFT.create()
         self.scale = 20
+        self.fixed_pt_num = 0
+        self.fixed_frm_num = 0
 
     def get_pnp_points(self, frm):
         idx_in_frm, pw = [], []
@@ -36,6 +38,9 @@ class Map(object):
         if err < self.pj_err_th:
             frm.pj_err = err
             frm.status = True
+            self.fixed_frm_num += 1
+        else:
+            print("Warning: frm %d has too few viewed points, pj_err = %.4f" % (frm.frm_idx, err))
 
     def __reconstruct_with_2frames__(self, frm1, frm2):
         pi1, pi2, idx = self.get_corresponding_matches(frm1, frm2)
@@ -45,6 +50,7 @@ class Map(object):
         for i, k in enumerate(idx):
             if self.pw[k] is None:
                 self.pw[k] = pw[i]
+                self.fixed_pt_num += 1
 
     def reconstruction(self, frm):
         if frm.status is False:
@@ -91,11 +97,12 @@ class Map(object):
         print("projection error = %f, %f" % (ref_err, mat_err))
         for k, i in enumerate(idx):
             self.pw[i] = pw[k]
+            self.fixed_pt_num += 1
         ref.pj_err = ref_err
         mat.pj_err = mat_err
         ref.status = True
         mat.status = True
-        self.get_attribute_dim()
+        self.fixed_frm_num += 2
 
     def add_a_frame(self, frm, *args):
         # detect & match kps of the frm with the map
@@ -145,7 +152,7 @@ class Map(object):
                     num += 1
                 elif ref.kps_idx[idx0[k]] is not np.Inf and frm.kps_idx[idx1[k]] is np.Inf:
                     frm.kps_idx[idx1[k]] = ref.kps_idx[idx0[k]]
-                elif ref.kps_idx[idx0[k]] is not np.Inf and frm.kps_idx[idx1[k]] is np.Inf:
+                elif frm.kps_idx[idx1[k]] is not np.Inf and ref.kps_idx[idx0[k]] is np.Inf:
                     ref.kps_idx[idx0[k]] = frm.kps_idx[idx1[k]]
                 else:
                     pass
@@ -183,7 +190,7 @@ class Map(object):
                     frm.kps_idx[i] = idx[kp]
             frm.sort_kps_by_idx()
 
-    def get_attribute_dim(self):
+    def update_attribute_dim(self):
         self.fixed_frm_num = 0
         for frm in self.frames:
             if frm.status is True:
@@ -218,58 +225,11 @@ class Map(object):
                 p.p = var[k: k + 3]
                 k += 3
 
-    def localize_and_reconstruct(self):
-        # estimate pose of the frame
-        for i, frm in enumerate(self.frames):
-            if frm.status is False:
-                self.localization(frm)
-                self.reconstruction(frm)
-                self.refine_map()
-
-        for i, frm1 in enumerate(self.frames):
-            if frm1.status is False:
-                continue
-            for j in range(i + 1, len(self.frames)):
-                frm2 = self.frames[j]
-                if frm2.status is True:
-                    self.triangulate_2frms(frm1, frm2)
-
-    def update_points(self):
-        for i, frm in enumerate(self.frames):
-            self.reconstruction(frm)
-
-    def update_cam_pose(self):
-        for frm in self.frames:
-            pw, pi, _ = self.get_epnp_points(frm)
-            if len(pw) < 5:
-                # frm.status = False
-                continue
-            frm.cam.R, frm.cam.t = epnp.estimate_pose_epnp(frm.cam.K, pw, pi)
-            err = frm.cam.calc_projection_error(pw, pi)
-            if err < frm.pj_err:
-                frm.status = True
-                frm.pj_err = err
-
-    def reset_scale(self, scale):
-        """
-            set the scale of the first best matching frame pair to self.scale and adjust the whole map
-        """
-        pass
-
-    def calc_projecting_err(self):
-        self.total_err = 0
-        frm_num = 0
-        for frm in self.frames:
-            if frm.status is True:
-                self.total_err += frm.pj_err
-                frm_num += 1
-        self.total_err /= (frm_num or 1)
-
     def plot_map(self, ax):
         for p in self.pw:
             if p is not None:
-                p.plot3d(ax, marker='.', color='blue', s=10)
+                p.plot3d(ax, marker='.', color='blue', s=0.5)
 
-        # for frm in self.frames:
-        #     if frm.status is True:
-        #         frm.cam.show(ax)
+        for frm in self.frames:
+            if frm.status is True:
+                frm.cam.show(ax)
