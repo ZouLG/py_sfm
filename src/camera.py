@@ -278,7 +278,7 @@ class PinHoleCamera(object):
             with the real image coordinates
         """
         pi_, _ = self.project_world2image(pw)
-        err = np.linalg.norm(pi - pi_) ** 2 / len(pw)
+        err = np.linalg.norm(pi - pi_) / len(pw)
         return err
 
 
@@ -331,7 +331,7 @@ def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=100):
             inlier_best = inliers
             E_best = E
 
-    print("ransac inliers num: %d" % len(inlier_best))
+    # print("ransac inliers num: %d" % len(inlier_best))
     assert len(inlier_best) > 0
 
     # iteration: use inliers to refine E matrix

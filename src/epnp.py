@@ -3,6 +3,7 @@ from camera import PinHoleCamera
 import geometry as geo
 import random
 from optimizer import EpnpSolver
+import cv2
 
 
 class Epnp(object):
@@ -221,6 +222,24 @@ def ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
     return R_best, t_best, inlier_best
 
 
+def solve_pnp(K, pw, pi, use_cv2=False):
+    if use_cv2:
+        state, rv, t = cv2.solvePnP(list2mat(pw), pi, K, 0)
+        R = geo.rodriguez(rv, np.linalg.norm(rv))
+        return R, np.squeeze(t)
+    else:
+        return estimate_pose_epnp(K, pw, pi)
+
+
+def solve_pnp_ransac(K, pw, pi, iter=100, threshold=5, use_cv2=False):
+    if use_cv2:
+        state, rv, t, inliers = cv2.solvePnPRansac(list2mat(pw), pi, K, 0)
+        R = geo.rodriguez(rv, np.linalg.norm(rv))
+        return R, np.squeeze(t), inliers.tolist()
+    else:
+        return ransac_estimate_pose(K, pw, pi, iter=iter, threshold=threshold)
+
+
 if __name__ == "__main__":
     from data import *
     pw = generate_rand_points(20, [0, 0, 10], [4, 4, 4])
@@ -234,7 +253,11 @@ if __name__ == "__main__":
     # pi = np.fromfile(r"F:\zoulugeng\program\python\01.SLAM\Data\pi.dat").reshape((-1, 2))
     R, t = estimate_pose_epnp(camera.K, pw, pi)
 
+    Rcv, tcv = solve_pnp_ransac(camera.K, pw, pi)
+
     print("R = \n", R)
     print("t = \n", t)
     print("R* = \n", camera.R)
     print("t* = \n", camera.t)
+    print("Rv = \n", Rcv)
+    print("tv = \n", tcv)

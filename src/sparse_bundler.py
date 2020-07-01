@@ -13,7 +13,7 @@ class SparseBa(Optimizer):
         self.graph = graph
         self.cam_block_size = (2, 7)
         self.point_block_size = (2, 3)
-        self.radius = 0.02
+        self.radius = 2e-4
         self.loss = np.Inf
         self.iter_num = 5
 
@@ -71,7 +71,7 @@ class SparseBa(Optimizer):
             if frm.status is True:
                 self.__calc_reprojection_err__(frm, rpj_err)
         rpj_err = np.squeeze(np.concatenate(rpj_err, axis=1))
-        loss = np.sum(np.square(rpj_err)) / len(rpj_err)
+        loss = np.linalg.norm(rpj_err) / len(rpj_err)
         if var is not None:
             self.graph.set_variables(bak)
         return rpj_err, loss
@@ -107,6 +107,7 @@ class SparseBa(Optimizer):
         self.graph.set_variables(var)
 
     def solve_lm(self):
+        self.radius = 2e-4   # reset
         iteration = 0
         while True:
             iteration += 1

@@ -45,7 +45,7 @@ def rodriguez(axis, theta):
         theta: rotated angle
         return: a rotation matrix
     """
-    k = np.array(axis)
+    k = np.squeeze(np.asarray(axis))
     k = k / np.linalg.norm(k)
     K = np.array([[0, -k[2], k[1]],
                   [k[2], 0., -k[0]],

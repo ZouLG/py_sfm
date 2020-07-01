@@ -16,8 +16,8 @@ class Sfm(object):
         plt.figure()
         ax = plt.gca(projection='3d')
         for k, img in enumerate(self.img_name_list):
-            if k < 5:
-                self.map.add_a_frame(Frame(), img, 4)
+            if k < 4:
+                self.map.add_a_frame(Frame(), img, 1)
         frm1 = self.map.frames[0]
         frm2 = self.map.frames[2]
 
@@ -30,7 +30,11 @@ class Sfm(object):
         for frm in self.map.frames:
             if frm.status is True:
                 continue
+            print("locate frame %d..." % frm.frm_idx)
             self.map.localization(frm)
+            self.ba.solve_lm()
+
+            print("reconstruct frame %d..." % frm.frm_idx)
             self.map.reconstruction(frm)
             self.map.sort_kps()
             self.ba.solve_lm()

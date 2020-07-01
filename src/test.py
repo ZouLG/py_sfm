@@ -156,14 +156,15 @@ def test_sfm():
 
         # generate frames
         cams, pi, frms = [], [], []
-        theta = np.linspace(0.0, np.pi * 1.0, 5)
+        theta = np.linspace(0.0, np.pi * 1.5, 7)
         center = 15 * np.column_stack((np.zeros(theta.shape), np.cos(theta), np.sin(theta)))
         z_axis = [-center[i, :] for i in range(theta.shape[0])]
 
         for i in range(theta.shape[0]):
             cams.append(PinHoleCamera.place_a_camera(center[i, :], z_axis[i], (1, 0, 0), f=f))
             pi_, pc_ = cams[i].project_world2image(pw)
-            pi_ += np.random.normal(0.0, noise_sigma, pi_.shape)
+            # pi_ += np.random.normal(0.0, noise_sigma, pi_.shape)
+            pi_ += np.random.uniform(-noise_sigma, noise_sigma, pi_.shape)
             frms.append(generate_frms(pi_, pc_, des, cams[i]))
             pi.append(pi_)  # add noise
             print(len(frms[i].des))

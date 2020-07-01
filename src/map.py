@@ -30,12 +30,13 @@ class Map(object):
         if frm.status is True:
             return
         pw, pi, _ = self.get_pnp_points(frm)
-        if len(pw) < 8:
+        if len(pw) < 15:
             print("Warning: frame %d has too few key points" % frm.frm_idx)
             return
-        frm.cam.R, frm.cam.t, _ = epnp.ransac_estimate_pose(frm.cam.K, pw, pi, iter=100)
+        frm.cam.R, frm.cam.t, _ = epnp.solve_pnp_ransac(frm.cam.K, pw, pi, iter=300)
         err = frm.cam.calc_projection_error(pw, pi)
         if err < self.pj_err_th:
+            print("frame %d: %d points in view, re-projection error: %.4f" % (frm.frm_idx, len(pw), err))
             frm.pj_err = err
             frm.status = True
             self.fixed_frm_num += 1
@@ -57,7 +58,7 @@ class Map(object):
             return
         for i, m in enumerate(self.match_map[frm.frm_idx]):
             ref = self.frames[i]
-            if m < 10 or ref.status is False:
+            if m < 30 or ref.status is False:
                 continue
             self.__reconstruct_with_2frames__(frm, ref)
 
@@ -96,8 +97,9 @@ class Map(object):
 
         print("projection error = %f, %f" % (ref_err, mat_err))
         for k, i in enumerate(idx):
+            if self.pw[i] is None:
+                self.fixed_pt_num += 1
             self.pw[i] = pw[k]
-            self.fixed_pt_num += 1
         ref.pj_err = ref_err
         mat.pj_err = mat_err
         ref.status = True
@@ -141,9 +143,9 @@ class Map(object):
         num = len(self.pw)
         for i, ref in enumerate(self.frames):
             idx0, idx1 = Frame.flann_match_kps(np.array(ref.des), np.array(frm.des))
-            pi0 = ref.pi[idx0]
-            pi1 = frm.pi[idx1]
+            pi0, pi1 = ref.pi[idx0], frm.pi[idx1]
             _, _, inliers = Frame.ransac_estimate_pose(pi0, pi1, ref.cam, frm.cam)
+            print("matching number between (%d, %d) is %d" % (ref.frm_idx, frm.frm_idx, len(inliers)))
             for k in inliers:
                 if ref.kps_idx[idx0[k]] is np.Inf and frm.kps_idx[idx1[k]] is np.Inf:
                     ref.kps_idx[idx0[k]] = num
@@ -233,3 +235,5 @@ class Map(object):
         for frm in self.frames:
             if frm.status is True:
                 frm.cam.show(ax)
+            else:
+                frm.cam.show(ax, color='red')
