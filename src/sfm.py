@@ -3,7 +3,7 @@ from frame import Frame
 from point import *
 import glob
 from sparse_bundler import SparseBa
-from utils import set_axis_limit
+from utils import set_axis_limit, save_to_ply
 
 
 class Sfm(object):
@@ -16,13 +16,12 @@ class Sfm(object):
         plt.figure()
         ax = plt.gca(projection='3d')
         for k, img in enumerate(self.img_name_list):
-            if k < 4:
-                self.map.add_a_frame(Frame(), img, 1)
+            self.map.add_a_frame(Frame(), img, 1)
         frm1 = self.map.frames[0]
         frm2 = self.map.frames[2]
 
         self.map.sort_kps_in_frame()
-        self.map.init_with_2frames(frm1, frm2)
+        self.map.reconstruct_with_2frames(frm1, frm2)
 
         self.map.sort_kps()
         self.ba.solve_lm()
@@ -30,20 +29,24 @@ class Sfm(object):
         for frm in self.map.frames:
             if frm.status is True:
                 continue
-            print("locate frame %d..." % frm.frm_idx)
+            print("locating frame %d..." % frm.frm_idx)
             self.map.localization(frm)
             self.ba.solve_lm()
 
-            print("reconstruct frame %d..." % frm.frm_idx)
+            print("reconstructing frame %d..." % frm.frm_idx)
             self.map.reconstruction(frm)
             self.map.sort_kps()
             self.ba.solve_lm()
 
+            save_to_ply(self.map.pw, "../data/pcd_%d.ply" % frm.frm_idx)
+            print("%d frames located" % self.map.fixed_frm_num)
+            print("%d points reconstructed" % self.map.fixed_pt_num)
+
         self.map.plot_map(ax)
-        set_axis_limit(ax, -70, 70, 30, 170)
+        set_axis_limit(ax, -200, 200, 0, 400)
 
 
 if __name__ == "__main__":
-    sfm = Sfm(r"F:\zoulugeng\program\python\01.SLAM\Data\data_qinghuamen\image data")
+    sfm = Sfm("../data/data_qinghuamen/image data/")
     sfm.reconstruct()
     plt.show()

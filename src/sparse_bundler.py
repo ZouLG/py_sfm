@@ -97,7 +97,7 @@ class SparseBa(Optimizer):
         self.calc_jacobian_mat()
         self.calc_block_hessian_mat()
         self.rpj_err, self.loss = self.calc_reprojection_err()
-        print(self.loss)
+        print("loss = %.5f" % self.loss)
 
         bc = self.jc.transpose() * self.rpj_err
         bp = self.jp.transpose() * self.rpj_err
@@ -114,7 +114,7 @@ class SparseBa(Optimizer):
             self.calc_jacobian_mat()
             self.calc_block_hessian_mat()
             self.rpj_err, self.loss = self.calc_reprojection_err()
-            print(self.loss)
+            print("loss = %.5f" % self.loss)
 
             bc = self.jc.transpose() * self.rpj_err
             bp = self.jp.transpose() * self.rpj_err
@@ -130,7 +130,7 @@ class SparseBa(Optimizer):
                 dx = self.solve_block_equation([hcc, self.hcp, self.hpc, hpp], [bc, bp])
                 var = var_bak + dx
                 rpj_err, loss = self.calc_reprojection_err(var)
-                if loss < self.loss:
+                if self.loss - loss > 1e-4:     # converge condition
                     self.graph.set_variables(var)
                     terminate_flag = False
                     self.radius /= 10

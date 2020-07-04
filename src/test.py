@@ -194,7 +194,7 @@ def test_sfm():
     frm0 = pt_cloud.frames[0]
     frm1 = pt_cloud.frames[1]
     pt_cloud.sort_kps_in_frame()
-    pt_cloud.init_with_2frames(frm0, frm1)
+    pt_cloud.reconstruct_with_2frames(frm0, frm1)
 
     pt_cloud.sort_kps()
     ba.solve_lm()

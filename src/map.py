@@ -11,10 +11,10 @@ class Map(object):
 
         self.match_map = []
         self.status = False
-        self.pj_err_th = 100
+        self.pj_err_th = 20
         self.total_err = 0
         self.detector = cv2.xfeatures2d_SIFT.create()
-        self.scale = 20
+        self.scale = 100
         self.fixed_pt_num = 0
         self.fixed_frm_num = 0
 
@@ -58,7 +58,7 @@ class Map(object):
             return
         for i, m in enumerate(self.match_map[frm.frm_idx]):
             ref = self.frames[i]
-            if m < 30 or ref.status is False:
+            if m < 100 or ref.status is False:
                 continue
             self.__reconstruct_with_2frames__(frm, ref)
 
@@ -79,7 +79,7 @@ class Map(object):
     def select_two_frames(self):
         pass
 
-    def init_with_2frames(self, ref, mat):
+    def reconstruct_with_2frames(self, ref, mat):
         print("Estimating pose with 2 frames...")
         pi0, pi1, idx = self.get_corresponding_matches(ref, mat)
         pc0 = ref.cam.project_image2camera(pi0)
@@ -146,18 +146,21 @@ class Map(object):
             pi0, pi1 = ref.pi[idx0], frm.pi[idx1]
             _, _, inliers = Frame.ransac_estimate_pose(pi0, pi1, ref.cam, frm.cam)
             print("matching number between (%d, %d) is %d" % (ref.frm_idx, frm.frm_idx, len(inliers)))
-            for k in inliers:
-                if ref.kps_idx[idx0[k]] is np.Inf and frm.kps_idx[idx1[k]] is np.Inf:
-                    ref.kps_idx[idx0[k]] = num
-                    frm.kps_idx[idx1[k]] = num
-                    self.pw.append(None)
-                    num += 1
-                elif ref.kps_idx[idx0[k]] is not np.Inf and frm.kps_idx[idx1[k]] is np.Inf:
-                    frm.kps_idx[idx1[k]] = ref.kps_idx[idx0[k]]
-                elif frm.kps_idx[idx1[k]] is not np.Inf and ref.kps_idx[idx0[k]] is np.Inf:
-                    ref.kps_idx[idx0[k]] = frm.kps_idx[idx1[k]]
-                else:
-                    pass
+            if len(inliers) > 100:  # enough matching pairs
+                for k in inliers:
+                    if ref.kps_idx[idx0[k]] is np.Inf and frm.kps_idx[idx1[k]] is np.Inf:
+                        ref.kps_idx[idx0[k]] = num
+                        frm.kps_idx[idx1[k]] = num
+                        self.pw.append(None)
+                        num += 1
+                    elif ref.kps_idx[idx0[k]] is not np.Inf and frm.kps_idx[idx1[k]] is np.Inf:
+                        frm.kps_idx[idx1[k]] = ref.kps_idx[idx0[k]]
+                    elif frm.kps_idx[idx1[k]] is not np.Inf and ref.kps_idx[idx0[k]] is np.Inf:
+                        ref.kps_idx[idx0[k]] = frm.kps_idx[idx1[k]]
+                    else:
+                        pass
+            else:
+                inliers = []
             self.match_map[cur_idx].append(len(inliers))
             self.match_map[i].append(len(inliers))
         self.match_map[cur_idx].append(0)   # match_map[i, i] = 0
@@ -235,5 +238,3 @@ class Map(object):
         for frm in self.frames:
             if frm.status is True:
                 frm.cam.show(ax)
-            else:
-                frm.cam.show(ax, color='red')
