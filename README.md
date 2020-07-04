@@ -10,7 +10,7 @@ by directly run "python sfm.py"
 
 reconstructed result:
 
-![image](https://github.com/ZouLG/py_sfm/tree/master/data/Figure.png)
+![image](https://github.com/ZouLG/py_sfm/blob/master/data/Figure.png)
 
 matplotlib is rather slow when dealing with large amounts of points.
 
@@ -20,4 +20,4 @@ ply file via meshlab or use open3d package, the script visualize.py in data
 
 is used for visualizing as following.
 
-![image](https://github.com/ZouLG/py_sfm/tree/master/data/qinghuamen.jpg)
+![image](https://github.com/ZouLG/py_sfm/blob/master/data/qinghuamen.jpg)
