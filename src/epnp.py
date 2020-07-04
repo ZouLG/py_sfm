@@ -6,23 +6,14 @@ from optimizer import EpnpSolver
 import cv2
 
 
-class Epnp(object):
-    def __init__(self):
-        pass
-
-    def estimate_pose(self, pi, pw):
-        pass
-
-
 def get_control_points(pw):
     p0 = geo.calc_center(pw)
     lamda, eig_v = geo.pca(list2mat(pw).T)
+    eig_v = [eig_v[i] * np.sign(lamda[i]) for i in range(len(lamda))]
+    lamda = abs(lamda)
     p1 = p0 + np.sqrt(lamda[0]) * eig_v[0]
     p2 = p0 + np.sqrt(lamda[1]) * eig_v[1]
     p3 = p0 + np.sqrt(lamda[2]) * eig_v[2]
-    # p1 = Point3D((1, 0, 0))
-    # p2 = Point3D((0, 1, 0))
-    # p3 = Point3D((0, 0, 1))
     return p0, p1, p2, p3
 
 
@@ -243,17 +234,17 @@ def solve_pnp_ransac(K, pw, pi, iter=100, threshold=5, use_cv2=False):
 if __name__ == "__main__":
     from data import *
     pw = generate_rand_points(20, [0, 0, 10], [4, 4, 4])
-    save_points_to_file(pw, r"F:\zoulugeng\program\python\01.SLAM\Data\pw.dat")
-    # pw = read_points_from_file(r"F:\zoulugeng\program\python\01.SLAM\Data\pw.dat")
+    save_points_to_file(pw, "../data/pw.dat")
+    # pw = read_points_from_file("../data/pw.dat")
 
     camera = PinHoleCamera.place_a_camera((1, 1, 1), (-1, -1, 1), (1, 0, 0))
     pi, _ = camera.project_world2image(pw)
     pi += np.random.normal(0.0, 7, pi.shape)
-    pi.tofile(r"F:\zoulugeng\program\python\01.SLAM\Data\pi.dat")
-    # pi = np.fromfile(r"F:\zoulugeng\program\python\01.SLAM\Data\pi.dat").reshape((-1, 2))
+    pi.tofile("../data/pi.dat")
+    # pi = np.fromfile("../data/pi.dat").reshape((-1, 2))
     R, t = estimate_pose_epnp(camera.K, pw, pi)
 
-    Rcv, tcv = solve_pnp_ransac(camera.K, pw, pi)
+    Rcv, tcv, _ = solve_pnp_ransac(camera.K, pw, pi)
 
     print("R = \n", R)
     print("t = \n", t)

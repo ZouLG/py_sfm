@@ -16,7 +16,8 @@ class Sfm(object):
         plt.figure()
         ax = plt.gca(projection='3d')
         for k, img in enumerate(self.img_name_list):
-            self.map.add_a_frame(Frame(), img, 1)
+            if k < 3:
+                self.map.add_a_frame(Frame(), img, 1)
         frm1 = self.map.frames[0]
         frm2 = self.map.frames[2]
 
@@ -43,7 +44,6 @@ class Sfm(object):
             print("%d points reconstructed" % self.map.fixed_pt_num)
 
         self.map.plot_map(ax)
-        set_axis_limit(ax, -200, 200, 0, 400)
 
 
 if __name__ == "__main__":

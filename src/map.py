@@ -230,11 +230,24 @@ class Map(object):
                 p.p = var[k: k + 3]
                 k += 3
 
-    def plot_map(self, ax):
+    def plot_map(self, ax, r=500):
+        points = [p for p in self.pw if p is not None]
+        for frm in self.frames:
+            if frm.status is True:
+                points.append(frm.cam.get_camera_center())
+
         for p in self.pw:
-            if p is not None:
-                p.plot3d(ax, marker='.', color='blue', s=0.5)
+            p.plot3d(ax, marker='.', color='blue', s=0.5)
 
         for frm in self.frames:
             if frm.status is True:
                 frm.cam.show(ax)
+
+        data = list2mat(points)
+        center = np.median(data, axis=0)
+        ax.set_xlim([center[0] - r, center[0] + r])
+        ax.set_ylim([center[1] - r, center[1] + r])
+        ax.set_zlim([center[2] - r, center[2] + r])
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_zlabel("z")

@@ -34,9 +34,8 @@ def save_to_ply(pw, file, scale=1, filter_radius=np.Inf):
             continue
         pw_filter.append((p - center) * scale)
     data = np.row_stack(pw_filter)
-    print(data.shape)
 
-    ply_head = ["ply", "format ascii 1.0", "comment Created by python sfm",
+    ply_head = ["ply", "format ascii 1.0", "comment Created by Python Sfm",
                 "element vertex %d" % len(data), "property float x",
                 "property float y", "property float z", "end_header"]
     with open(file, 'w') as f:

@@ -130,7 +130,7 @@ class SparseBa(Optimizer):
                 dx = self.solve_block_equation([hcc, self.hcp, self.hpc, hpp], [bc, bp])
                 var = var_bak + dx
                 rpj_err, loss = self.calc_reprojection_err(var)
-                if self.loss - loss > 1e-4:     # converge condition
+                if self.loss - loss > 1e-3:     # converge condition
                     self.graph.set_variables(var)
                     terminate_flag = False
                     self.radius /= 10
