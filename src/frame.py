@@ -68,33 +68,60 @@ class Frame:
 
     @staticmethod
     def get_exif_info(jpg_path):
-        def get_data_with_tag(exif_data, tag):
-            if tag in ['EXIF ExifImageWidth', 'EXIF ExifImageLength']:
-                return exif_data[tag].values[0]
-            elif tag in ['EXIF FocalLength', 'EXIF FocalPlaneXResolution', 'EXIF FocalPlaneYResolution']:
-                ratio = exif_data[tag].values[0]
-                return ratio.num / ratio.den
-            elif tag in ['EXIF FocalPlaneResolutionUnit']:
-                if exif_data[tag].values[0] == 2:
-                    return 25.4     # 1 inch = 25.4 mm
-                elif exif_data[tag].values[0] == 3:
-                    return 10
-                elif exif_data[tag].values[0] == 4:
-                    return 1
+        def get_focal_length(exif_data):
+            f, f35 = None, None
+            if 'EXIF FocalLength' in exif_data.keys():
+                ratio = exif_data['EXIF FocalLength'].values[0]
+                f = ratio.num / ratio.den
+
+            f35_keys = ['EXIF FocalLengthIn35mmFilm', 'Image FocalLengthIn35mmFilm']
+            for key in f35_keys:
+                if key in exif_data.keys():
+                    f35 = exif_data[key].values[0]
+            return f, f35
+
+        def get_sensor_res(exif_data, f, f35, unit, img_w, img_h):
+            sx, sy = None, None
+            if 'EXIF FocalPlaneXResolution' in exif_data.keys():
+                ratio = exif_data['EXIF FocalPlaneXResolution'].values[0]
+                nx = ratio.num / ratio.den
+                sx = unit / nx
+            elif f35 is not None:
+                sx = f / f35 * np.sqrt(1872 / (img_w ** 2 + img_h ** 2))
+
+            if 'EXIF FocalPlaneYResolution' in exif_data.keys():
+                ratio = exif_data['EXIF FocalPlaneYResolution'].values[0]
+                ny = ratio.num / ratio.den
+                sy = unit / ny
+            elif f35 is not None:
+                sy = sx
+            return sx, sy
+
+        def get_sensor_res_unit(exif_data):
+            units = [None, None, 25.4, 10, 1]   # 2: inch   3: cm   4: mm
+            unit_keys = ['EXIF FocalPlaneResolutionUnit', 'Image ResolutionUnit']
+            for key in unit_keys:
+                if key in exif_data.keys():
+                    return units[exif_data[key].values[0]]
             return None
+
+        def get_image_res(exif_data):
+            img_w, img_h = None, None
+            if 'EXIF ExifImageWidth' in exif_data.keys():
+                img_w = exif_data['EXIF ExifImageWidth'].values[0]
+
+            if 'EXIF ExifImageLength' in exif_data.keys():
+                img_h = exif_data['EXIF ExifImageLength'].values[0]
+            return img_w, img_h
 
         fobj = open(jpg_path, 'rb')
         exif_data = exifread.process_file(fobj)
-        f = get_data_with_tag(exif_data, 'EXIF FocalLength')
-        nx = get_data_with_tag(exif_data, 'EXIF FocalPlaneXResolution')
-        ny = get_data_with_tag(exif_data, 'EXIF FocalPlaneYResolution')
-        xy_unit = get_data_with_tag(exif_data, 'EXIF FocalPlaneResolutionUnit')
-        sx = xy_unit / nx
-        sy = xy_unit / ny
+        f, f35 = get_focal_length(exif_data)
+        img_w, img_h = get_image_res(exif_data)
+        xy_unit = get_sensor_res_unit(exif_data)
+        sx, sy = get_sensor_res(exif_data, f, f35, xy_unit, img_w, img_w)
         fx = f / sx
         fy = f / sy
-        img_w = get_data_with_tag(exif_data, 'EXIF ExifImageWidth')
-        img_h = get_data_with_tag(exif_data, 'EXIF ExifImageLength')
         return [f, fx, fy, img_w, img_h]
 
     def sort_kps_by_idx(self):
@@ -149,7 +176,8 @@ def test_matcher():
 
 if __name__ == "__main__":
     # matches = test_matcher()
-    jpg_path = r"F:\zoulugeng\program\python\01.SLAM\Data\data_qinghuamen\image data\IMG_5589.jpg"
+    # jpg_path = r"../data/image data/IMG_5589.jpg"
+    jpg_path = r"../data/GustavIIAdolf/DSC_0351.JPG"
     exif_data = Frame.get_exif_info(jpg_path)
     print(exif_data)
     # img_data = cv2.imread(jpg_path)

@@ -17,7 +17,7 @@ class Sfm(object):
         ax = plt.gca(projection='3d')
         for k, img in enumerate(self.img_name_list):
             if k < 3:
-                self.map.add_a_frame(Frame(), img, 1)
+                self.map.add_a_frame(Frame(), img, 2)
         frm1 = self.map.frames[0]
         frm2 = self.map.frames[2]
 
@@ -26,13 +26,17 @@ class Sfm(object):
 
         self.map.sort_kps()
         self.ba.solve_lm()
+        save_to_ply(self.map.pw, "../data/pcd_init.ply")
 
         for frm in self.map.frames:
             if frm.status is True:
                 continue
             print("locating frame %d..." % frm.frm_idx)
             self.map.localization(frm)
-            self.ba.solve_lm()
+            if frm.status is not True:
+                continue
+            else:
+                self.ba.solve_lm()
 
             print("reconstructing frame %d..." % frm.frm_idx)
             self.map.reconstruction(frm)
@@ -48,5 +52,6 @@ class Sfm(object):
 
 if __name__ == "__main__":
     sfm = Sfm("../data/data_qinghuamen/image data/")
+    # sfm = Sfm("../data/GustavIIAdolf/")
     sfm.reconstruct()
     plt.show()

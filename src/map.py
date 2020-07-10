@@ -2,6 +2,7 @@ from camera import *
 from frame import Frame
 from utils import *
 import epnp
+from time import time
 
 
 class Map(object):
@@ -134,6 +135,7 @@ class Map(object):
         cur_idx = len(self.frames)
         frm.frm_idx = cur_idx
         self.match_map.append([])
+        print("total %d key-points detected in frame %d" % (len(frm.des), cur_idx))
         if cur_idx == 0:   # if is the first frame
             self.frames.append(frm)
             self.match_map[-1].append(0)
@@ -236,7 +238,7 @@ class Map(object):
             if frm.status is True:
                 points.append(frm.cam.get_camera_center())
 
-        for p in self.pw:
+        for p in points:
             p.plot3d(ax, marker='.', color='blue', s=0.5)
 
         for frm in self.frames:

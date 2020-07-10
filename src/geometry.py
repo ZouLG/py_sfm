@@ -1,7 +1,3 @@
-import numpy as np
-import random
-from matplotlib import pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 from point import *
 
 

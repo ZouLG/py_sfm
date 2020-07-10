@@ -2,9 +2,34 @@ from jacobian import derr_over_dcam, derr_over_dpw
 from optimizer import Optimizer
 from map import Map
 import numpy as np
+from quarternion import Quarternion
 from scipy import sparse
 from scipy.sparse import linalg
-from quarternion import Quarternion
+
+
+def inv_hpp_mat(mat):
+    m = mat.shape[0]
+    data, indices, indptr = [], [], []
+    for i in range(0, m, 3):
+        block = mat[i: i + 3, i: i + 3].toarray()
+        data.append(np.linalg.inv(block))
+        indices.append(i // 3)
+        indptr.append(i // 3)
+    indptr.append(m // 3)
+    return sparse.bsr_matrix((np.asarray(data), np.asarray(indices), np.asarray(indptr)),
+                             shape=(m, m), blocksize=(3, 3))
+
+
+def solve_block_equation(A, b):
+    hcc, hcp, hpc, hpp = A
+    bc, bp = b
+    # hpp_inv = linalg.inv(hpp.tocsc())
+    hpp_inv = inv_hpp_mat(hpp.tolil())
+    schur = hcc - hcp * hpp_inv * hpc
+    b = hcp * hpp_inv * bp - bc
+    dxc = np.matmul(np.linalg.pinv(schur.toarray()), b)
+    dxp = -hpp_inv * (bp + hpc * dxc)
+    return np.concatenate([dxc, dxp])
 
 
 class SparseBa(Optimizer):
@@ -82,17 +107,6 @@ class SparseBa(Optimizer):
         self.hcp = self.jc.transpose() * self.jp
         self.hpc = self.hcp.transpose()
 
-    @staticmethod
-    def solve_block_equation(A, b):
-        hcc, hcp, hpc, hpp = A
-        bc, bp = b
-        hpp_inv = linalg.inv(hpp.tocsc())
-        schur = hcc - hcp * hpp_inv * hpc
-        b = hcp * hpp_inv * bp - bc
-        dxc = np.matmul(np.linalg.pinv(schur.toarray()), b)
-        dxp = -hpp_inv * (bp + hpc * dxc)
-        return np.concatenate([dxc, dxp])
-
     def solve(self):
         self.calc_jacobian_mat()
         self.calc_block_hessian_mat()
@@ -101,7 +115,7 @@ class SparseBa(Optimizer):
 
         bc = self.jc.transpose() * self.rpj_err
         bp = self.jp.transpose() * self.rpj_err
-        dx = self.solve_block_equation([self.hcc, self.hcp, self.hpc, self.hpp], [bc, bp])
+        dx = solve_block_equation([self.hcc, self.hcp, self.hpc, self.hpp], [bc, bp])
         var = self.graph.get_variables()
         var += dx
         self.graph.set_variables(var)
@@ -127,7 +141,7 @@ class SparseBa(Optimizer):
                 hcc = self.hcc + self.radius * sparse.eye(self.hcc.shape[0])
                 hpp = self.hpp + self.radius * sparse.eye(self.hpp.shape[0])
 
-                dx = self.solve_block_equation([hcc, self.hcp, self.hpc, hpp], [bc, bp])
+                dx = solve_block_equation([hcc, self.hcp, self.hpc, hpp], [bc, bp])
                 var = var_bak + dx
                 rpj_err, loss = self.calc_reprojection_err(var)
                 if self.loss - loss > 1e-3:     # converge condition

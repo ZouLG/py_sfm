@@ -1,6 +1,6 @@
 import numpy as np
 import random
-from point import Point3D, list2mat, mat2list
+from point import Point3D, list2mat
 import geometry as geo
 import cv2
 from quarternion import Quarternion
@@ -322,14 +322,18 @@ def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=100):
     N = x1.shape[0]
     inlier_best = []
     E_best = np.eye(3)
+    ibest = 0
     for i in range(max_iter):
         index = random.sample(range(N), batchNum)
         E = solve_ls_fitting(x1, x2, index)
         E = project_to_essential_space(E)
         inliers = get_inliers(E, x1, x2, eps)
         if len(inliers) > len(inlier_best):
+            ibest = i
             inlier_best = inliers
             E_best = E
+        if len(inlier_best) > N * 0.7 or i - ibest > 50:
+            break
 
     # print("ransac inliers num: %d" % len(inlier_best))
     assert len(inlier_best) > 0
