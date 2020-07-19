@@ -2,7 +2,6 @@ from camera import *
 from frame import Frame
 from utils import *
 import epnp
-from time import time
 
 
 class Map(object):
@@ -19,7 +18,7 @@ class Map(object):
         self.fixed_pt_num = 0
         self.fixed_frm_num = 0
 
-    def get_pnp_points(self, frm):
+    def collect_pnp_points(self, frm):
         idx_in_frm, pw = [], []
         for i, idx in enumerate(frm.kps_idx):
             if idx is not np.Inf and self.pw[idx] is not None:
@@ -27,32 +26,43 @@ class Map(object):
                 pw.append(self.pw[idx])
         return pw, frm.pi[idx_in_frm, :], idx_in_frm
 
-    def localization(self, frm):
-        if frm.status is True:
-            return
-        pw, pi, _ = self.get_pnp_points(frm)
-        if len(pw) < 15:
-            print("Warning: frame %d has too few key points" % frm.frm_idx)
-            return
-        frm.cam.R, frm.cam.t, _ = epnp.solve_pnp_ransac(frm.cam.K, pw, pi, iter=300)
-        err = frm.cam.calc_projection_error(pw, pi)
+    def localise_a_frame(self):
+        frm, pw_view, pi_view = self.frames[0], [], None
+        for f in self.frames:
+            if f.status is False:
+                pw, pi, _ = self.collect_pnp_points(f)
+                if len(pw) > len(pw_view):
+                    frm = f
+                    pw_view = pw
+                    pi_view = pi
+
+        if len(pw_view) < 15:
+            print("Warning: There is no frame has enough points in view")
+            return False, None
+        frm.cam.R, frm.cam.t, _ = epnp.solve_pnp_ransac(frm.cam.K, pw_view, pi_view, iter=300)
+        err = frm.cam.calc_projection_error(pw_view, pi_view)
         if err < self.pj_err_th:
-            print("frame %d: %d points in view, re-projection error: %.4f" % (frm.frm_idx, len(pw), err))
+            print("frame %d: %d points in view, re-projection error: %.4f" % (frm.frm_idx, len(pw_view), err))
             frm.pj_err = err
             frm.status = True
             self.fixed_frm_num += 1
+            return True, frm
         else:
             print("Warning: frm %d has too few viewed points, pj_err = %.4f" % (frm.frm_idx, err))
+            return False, None
 
-    def __reconstruct_with_2frames__(self, frm1, frm2):
-        pi1, pi2, idx = self.get_corresponding_matches(frm1, frm2)
-        pw, _, _ = camera_triangulation(frm1.cam, frm2.cam, pi1, pi2)
-        err1 = frm1.cam.calc_projection_error(pw, pi1)
-        err2 = frm2.cam.calc_projection_error(pw, pi2)
-        for i, k in enumerate(idx):
-            if self.pw[k] is None:
-                self.pw[k] = pw[i]
-                self.fixed_pt_num += 1
+    def __is_valid_point__(self, pw, cam1, cam2, _pi1, _pi2, threshold=1):
+        pc1 = cam1.project_world2camera([pw])
+        pc2 = cam2.project_world2camera([pw])
+        if pc1[0].z <= cam1.f or pc2[0].z <= cam2.f:
+            return False, np.Inf
+        pi1 = cam1.project_camera2image(pc1)
+        pi2 = cam2.project_camera2image(pc2)
+        err1 = np.linalg.norm(pi1 - _pi1)
+        err2 = np.linalg.norm(pi2 - _pi2)
+        if err1 > threshold or err2 > threshold:
+            return False, err1 + err2
+        return True, err1 + err2
 
     def reconstruction(self, frm):
         if frm.status is False:
@@ -61,7 +71,10 @@ class Map(object):
             ref = self.frames[i]
             if m < 100 or ref.status is False:
                 continue
-            self.__reconstruct_with_2frames__(frm, ref)
+            pi0, pi1, idx = self.get_corresponding_matches(ref, frm)
+            pw_valid, idx_valid, err = self.reconstruct_with_2frames(frm, ref, pi0, pi1, idx)
+            print("reconstruct %d points with frame %d & %d" % (len(pw_valid), ref.frm_idx, frm.frm_idx))
+            self.register_points(pw_valid, idx_valid)
 
     def get_corresponding_matches(self, ref, mat):
         idx0, idx1, idx2 = [], [], []
@@ -77,35 +90,131 @@ class Map(object):
         pi1 = mat.pi[idx2]
         return pi0, pi1, idx0
 
-    def select_two_frames(self):
-        pass
-
-    def reconstruct_with_2frames(self, ref, mat):
+    def estimate_pose_with_2frames(self, ref, mat):
         print("Estimating pose with 2 frames...")
+        if ref.status is not True:
+            ref.cam.R = np.eye(3)
+            ref.cam.t = np.zeros((3,))
         pi0, pi1, idx = self.get_corresponding_matches(ref, mat)
+        if len(idx) < 16:
+            return None, None, []
         pc0 = ref.cam.project_image2camera(pi0)
         pc1 = mat.cam.project_image2camera(pi1)
         E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-5, max_iter=500)
         R_list, t_list = decompose_essential_mat(E)
         R, t = check_validation_rt(R_list, t_list, pc0, pc1)
 
-        mat.cam.R = np.matmul(ref.cam.R, R)
-        mat.cam.t = np.matmul(ref.cam.R, t)
+        mat.cam.R = np.matmul(ref.cam.R, R)     # R2 = R1 * R
+        mat.cam.t = t + np.matmul(np.matmul(mat.cam.R, ref.cam.R.T), ref.cam.t)     # t2 = t + R2 * R1.T * t1
         mat.cam.t = mat.cam.t / np.linalg.norm(mat.cam.t) * self.scale
-        pw, _, _ = camera_triangulation(ref.cam, mat.cam, pi0, pi1)
-        ref_err = ref.cam.calc_projection_error(pw, pi0)
-        mat_err = mat.cam.calc_projection_error(pw, pi1)
+        return pi0, pi1, idx
 
-        print("projection error = %f, %f" % (ref_err, mat_err))
-        for k, i in enumerate(idx):
+    def reconstruct_with_2frames(self, ref, mat, pi0, pi1, kps_idx):
+        pw, _, _ = camera_triangulation(ref.cam, mat.cam, pi0, pi1)
+        pw_valid, idx_valid, rpj_err = [], [], 0
+        for k, p in enumerate(kps_idx):
+            if self.pw[p] is None:
+                status, err = self.__is_valid_point__(pw[k], ref.cam, mat.cam, pi0[k], pi1[k], threshold=10)
+                if status is False:
+                    continue
+                pw_valid.append(pw[k])
+                idx_valid.append(p)
+                rpj_err += err
+        return pw_valid, idx_valid, rpj_err / len(pw_valid)
+
+    def initialize(self, k=3):
+        def find_k_most(k, matches, match_num, match, num):
+            if len(match_num) < k:
+                match_num.append(num)
+                matches.append(match)
+            elif match_num[-1] < num:
+                match_num[-1] = num
+                matches[-1] = match
+            else:
+                return
+
+            cur = -1
+            for i in range(-2, -len(match_num), -1):
+                if match_num[i] < num:
+                    swap(match_num, i, cur)
+                    swap(matches, i, cur)
+                    cur = i
+                else:
+                    break
+
+        frm_num = len(self.frames)
+        if frm_num < 2:
+            print("Error: Need at least 2 image from different views")
+            raise Exception
+
+        matches, match_num = [], []
+        for i in range(frm_num):
+            for j in range(i + 1, frm_num):
+                find_k_most(k, matches, match_num, (i, j), self.match_map[i][j])
+
+        pw_best, idx_best, match_best, err_min = [], [], (0, 1), np.Inf
+        ref_pose = (np.eye(3), np.zeros((3, )))
+        mat_pose = (np.eye(3), np.zeros((3, )))
+        for m in matches:
+            ref, mat = self.frames[m[0]], self.frames[m[1]]
+            pi0, pi1, idx = self.estimate_pose_with_2frames(ref, mat)
+            pw, idx, err = self.reconstruct_with_2frames(ref, mat, pi0, pi1, idx)
+            if err < err_min:
+                match_best = m
+                ref_pose = (ref.cam.R, ref.cam.t)
+                mat_pose = (mat.cam.R, mat.cam.t)
+                pw_best = pw
+                idx_best = idx
+                err_min = err
+        ref = self.frames[match_best[0]]
+        mat = self.frames[match_best[1]]
+        if err_min < self.pj_err_th:
+            print("Initialize with frame %d & %d, re-projection error = %.5f" % (ref.frm_idx, mat.frm_idx, err_min))
+            ref.cam.R, ref.cam.t = ref_pose
+            mat.cam.R, mat.cam.t = mat_pose
+            self.register_frame(ref)
+            self.register_frame(mat)
+            self.register_points(pw_best, idx_best)
+        else:
+            print("Error: failed to find 2 frames for initializing")
+            raise Exception
+
+    def register_points(self, pw, idx):
+        for p, i in zip(pw, idx):
             if self.pw[i] is None:
                 self.fixed_pt_num += 1
-            self.pw[i] = pw[k]
-        ref.pj_err = ref_err
-        mat.pj_err = mat_err
-        ref.status = True
-        mat.status = True
-        self.fixed_frm_num += 2
+            self.pw[i] = p
+
+    def register_frame(self, frm):
+        frm.status = True
+        self.fixed_frm_num += 1
+
+    # def reconstruct_with_2frames(self, ref, mat):
+    #     print("Estimating pose with 2 frames...")
+    #     pi0, pi1, idx = self.get_corresponding_matches(ref, mat)
+    #     pc0 = ref.cam.project_image2camera(pi0)
+    #     pc1 = mat.cam.project_image2camera(pi1)
+    #     E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-6, max_iter=700)
+    #     R_list, t_list = decompose_essential_mat(E)
+    #     R, t = check_validation_rt(R_list, t_list, pc0, pc1)
+    #
+    #     mat.cam.R = np.matmul(ref.cam.R, R)
+    #     mat.cam.t = np.matmul(ref.cam.R, t)
+    #     mat.cam.t = mat.cam.t / np.linalg.norm(mat.cam.t) * self.scale
+    #     pw, _, _ = camera_triangulation(ref.cam, mat.cam, pi0, pi1)
+    #     ref_err = ref.cam.calc_projection_error(pw, pi0)
+    #     mat_err = mat.cam.calc_projection_error(pw, pi1)
+    #
+    #     print("projection error = %f, %f" % (ref_err, mat_err))
+    #     for k, i in enumerate(idx):
+    #         if self.pw[i] is None:
+    #             self.fixed_pt_num += 1
+    #         self.pw[i] = pw[k]
+    #     ref.pj_err = ref_err
+    #     mat.pj_err = mat_err
+    #     ref.status = True
+    #     mat.status = True
+    #     self.fixed_frm_num += 2
 
     def add_a_frame(self, frm, *args):
         # detect & match kps of the frm with the map
@@ -146,6 +255,7 @@ class Map(object):
         for i, ref in enumerate(self.frames):
             idx0, idx1 = Frame.flann_match_kps(np.array(ref.des), np.array(frm.des))
             pi0, pi1 = ref.pi[idx0], frm.pi[idx1]
+            # inliers = list(range(len(idx0)))
             _, _, inliers = Frame.ransac_estimate_pose(pi0, pi1, ref.cam, frm.cam)
             print("matching number between (%d, %d) is %d" % (ref.frm_idx, frm.frm_idx, len(inliers)))
             if len(inliers) > 100:  # enough matching pairs

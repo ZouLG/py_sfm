@@ -282,7 +282,7 @@ class PinHoleCamera(object):
         return err
 
 
-def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=100):
+def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=500):
     """
         x1: Nx3 matrix of camera1 points in camera-frame
         x2: Nx3 matrix of camera2 points in camera-frame

@@ -36,8 +36,9 @@ def derr_over_dcam(q, t, fu, fv, pw):
     return jcam
 
 
-def derr_over_df(q, t, fu, fv, pw):
-    pass
+def derr_over_df(q, t, pw):
+    pc = Quarternion.rotate_with_quaternion(q, pw.p) + t
+    return np.diag([pc[0] / pc[2], pc[1] / pc[2]])
 
 
 def derr_over_dpw(q, t, fu, fv, pw):

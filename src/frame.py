@@ -22,7 +22,7 @@ class Frame:
         self.pj_err = np.Inf
         self.frm_idx = None
         self.status = False
-        # self.img_data = None # for debug use
+        # self.img_data = None    # for debug use
 
     @staticmethod
     def detect_kps(img, detector, response_th=0.02):
@@ -36,15 +36,34 @@ class Frame:
         pi = np.row_stack(pi)
         return pi, des
 
-    def draw_kps(self, img, radius=5, color=(255, 0, 0)):
-        draw_img = img
-        for i in range(self.pi.shape[0]):
-            if self.kps_idx[i] is not np.Inf:
-                cv2.circle(draw_img, (int(self.pi[i, 0]), int(self.pi[i, 1])),
-                           radius=radius, color=color, thickness=1)
-        # draw_img = cv2.drawKeypoints(img, kps, img, color=color)
+    @staticmethod
+    def draw_kps(img, pi, radius=5, thickness=2):
+        draw_img = img.copy()
+        for i in range(pi.shape[0]):
+            color = tuple(np.random.randint(0, 255, (3,)).tolist())
+            cv2.circle(draw_img, tuple(pi[i, :].astype(int)),
+                       radius=radius, color=color, thickness=thickness)
         plt.figure()
         plt.imshow(draw_img, cmap='gray')
+
+    @staticmethod
+    def draw_common_kps(frm1, frm2, radius=5):
+        idx = 0
+        img1, img2 = frm1.img_data.copy(), frm2.img_data.copy()
+        for m, p in enumerate(frm1.kps_idx):
+            n = binary_search(frm2.kps_idx, p)
+            if n != -1 and p is not np.Inf:
+                idx += 1
+                color = tuple(np.random.randint(0, 255, (3,)).tolist())
+                cv2.circle(img1, tuple(frm1.pi[m, :].astype(int)),
+                           radius=radius, color=color, thickness=5)
+                cv2.circle(img2, tuple(frm2.pi[n, :].astype(int)),
+                           radius=radius, color=color, thickness=5)
+        print("common kps num = %d" % idx)
+        plt.figure()
+        plt.imshow(img1)
+        plt.figure()
+        plt.imshow(img2)
 
     @staticmethod
     def flann_match_kps(des1, des2, knn_ratio=0.5):

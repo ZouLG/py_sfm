@@ -24,6 +24,12 @@ def binary_search(g, k):
     return -1
 
 
+def swap(arr, m, n):
+    tmp = arr[m]
+    arr[m] = arr[n]
+    arr[n] = tmp
+
+
 def save_to_ply(pw, file, scale=1, filter_radius=np.Inf):
     pw = [p for p in pw if isinstance(p, Point3D)]
     data = list2mat(pw)
