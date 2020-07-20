@@ -5,6 +5,7 @@ from matplotlib import pyplot as plt
 from quarternion import Quarternion
 from utils import *
 import exifread
+import math
 
 
 class Frame:
@@ -22,10 +23,10 @@ class Frame:
         self.pj_err = np.Inf
         self.frm_idx = None
         self.status = False
-        # self.img_data = None    # for debug use
+        self.img_data = None    # for debug use
 
     @staticmethod
-    def detect_kps(img, detector, response_th=0.02):
+    def detect_kps_old(img, detector, response_th=0.02):
         kps_all, des_all = detector.detectAndCompute(img, None)
         pi, des = [], []
         for i, kp in enumerate(kps_all):
@@ -33,6 +34,49 @@ class Frame:
                 continue
             pi.append(np.array(kp.pt))
             des.append(des_all[i])
+        pi = np.row_stack(pi)
+        return pi, des
+
+    @staticmethod
+    def detect_kps(img, detector, response_th=0.0, num_per_blk=7):
+        def insert_kp(arr, kp, idx):
+            if len(arr) < num_per_blk:
+                arr.append(idx)
+            elif kps_all[arr[-1]].response < kp.response:
+                arr[-1] = idx
+            else:
+                return
+
+            for k in range(-1, -len(arr), -1):
+                if kps_all[arr[k - 1]].response < kp.response:
+                    swap(arr, k, k - 1)
+                else:
+                    break
+
+        kps_all, des_all = detector.detectAndCompute(img, None)
+        height, width = img.shape
+        blk_h, blk_w = 64, 64
+        m, n = int(math.ceil(width / blk_w)), int(math.ceil(height / blk_w))
+        # kps_idx = [[[]] * m] * n
+        kps_idx = []
+        for i in range(n):
+            kps_idx.append([])
+            for j in range(m):
+                kps_idx[i].append([])
+
+        pi, des = [], []
+        for i, kp in enumerate(kps_all):
+            if kp.response < response_th:
+                continue
+            x = int(kp.pt[0] / blk_w)
+            y = int(kp.pt[1] / blk_h)
+            insert_kp(kps_idx[y][x], kp, i)
+
+        for i in range(n):
+            for j in range(m):
+                for k in kps_idx[i][j]:
+                    pi.append(np.array(kps_all[k].pt))
+                    des.append(des_all[k])
         pi = np.row_stack(pi)
         return pi, des
 
