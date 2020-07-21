@@ -40,7 +40,7 @@ class SparseBa(Optimizer):
         self.point_block_size = (2, 3)
         self.radius = 2e-4
         self.loss = np.Inf
-        self.iter_num = 5
+        self.iter_num = 10
 
     def __calc_sparse_jacobian__(self, frm, frm_idx):
         for i in frm.kps_idx:

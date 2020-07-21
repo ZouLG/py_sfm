@@ -189,33 +189,6 @@ class Map(object):
         frm.status = True
         self.fixed_frm_num += 1
 
-    # def reconstruct_with_2frames(self, ref, mat):
-    #     print("Estimating pose with 2 frames...")
-    #     pi0, pi1, idx = self.get_corresponding_matches(ref, mat)
-    #     pc0 = ref.cam.project_image2camera(pi0)
-    #     pc1 = mat.cam.project_image2camera(pi1)
-    #     E, _ = get_null_space_ransac(list2mat(pc0), list2mat(pc1), eps=1e-6, max_iter=700)
-    #     R_list, t_list = decompose_essential_mat(E)
-    #     R, t = check_validation_rt(R_list, t_list, pc0, pc1)
-    #
-    #     mat.cam.R = np.matmul(ref.cam.R, R)
-    #     mat.cam.t = np.matmul(ref.cam.R, t)
-    #     mat.cam.t = mat.cam.t / np.linalg.norm(mat.cam.t) * self.scale
-    #     pw, _, _ = camera_triangulation(ref.cam, mat.cam, pi0, pi1)
-    #     ref_err = ref.cam.calc_projection_error(pw, pi0)
-    #     mat_err = mat.cam.calc_projection_error(pw, pi1)
-    #
-    #     print("projection error = %f, %f" % (ref_err, mat_err))
-    #     for k, i in enumerate(idx):
-    #         if self.pw[i] is None:
-    #             self.fixed_pt_num += 1
-    #         self.pw[i] = pw[k]
-    #     ref.pj_err = ref_err
-    #     mat.pj_err = mat_err
-    #     ref.status = True
-    #     mat.status = True
-    #     self.fixed_frm_num += 2
-
     def add_a_frame(self, frm, *args):
         # detect & match kps of the frm with the map
         f, fx, fy, img_w, img_h = 1.0, 500, 500, 1920, 1080
@@ -231,7 +204,7 @@ class Map(object):
                 fy /= resize_scale
                 color = cv2.resize(cv2.imread(args[0]), (img_w, img_h))
                 gray = cv2.cvtColor(color, cv2.COLOR_RGB2GRAY)
-                # frm.img_data = color    # for debug use
+                frm.img_data = color    # for debug use
             elif isinstance(args[0], np.ndarray):
                 gray = args[0]
                 img_w, img_h = gray.shape[1], gray.shape[0]
