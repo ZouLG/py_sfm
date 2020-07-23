@@ -91,7 +91,6 @@ class Map(object):
         return pi0, pi1, idx0
 
     def estimate_pose_with_2frames(self, ref, mat):
-        print("Estimating pose with 2 frames...")
         if ref.status is not True:
             ref.cam.R = np.eye(3)
             ref.cam.t = np.zeros((3,))
@@ -114,7 +113,7 @@ class Map(object):
         pw_valid, idx_valid, rpj_err = [], [], 0
         for k, p in enumerate(kps_idx):
             if self.pw[p] is None:
-                status, err = self.__is_valid_point__(pw[k], ref.cam, mat.cam, pi0[k], pi1[k], threshold=10)
+                status, err = self.__is_valid_point__(pw[k], ref.cam, mat.cam, pi0[k], pi1[k], threshold=20)
                 if status is False:
                     continue
                 pw_valid.append(pw[k])
@@ -159,6 +158,7 @@ class Map(object):
             ref, mat = self.frames[m[0]], self.frames[m[1]]
             pi0, pi1, idx = self.estimate_pose_with_2frames(ref, mat)
             pw, idx, err = self.reconstruct_with_2frames(ref, mat, pi0, pi1, idx)
+            print("initialize with frame %d & %d, err = %.4f" % (ref.frm_idx, mat.frm_idx, err))
             if err < err_min:
                 match_best = m
                 ref_pose = (ref.cam.R, ref.cam.t)
@@ -202,7 +202,8 @@ class Map(object):
                 img_h = int(img_h / resize_scale)
                 fx /= resize_scale
                 fy /= resize_scale
-                color = cv2.resize(cv2.imread(args[0]), (img_w, img_h))
+                color = cv2.imread(args[0])
+                color = cv2.resize(color, (img_w, img_h))
                 gray = cv2.cvtColor(color, cv2.COLOR_RGB2GRAY)
                 frm.img_data = color    # for debug use
             elif isinstance(args[0], np.ndarray):
@@ -297,6 +298,7 @@ class Map(object):
             if frm.status is True:
                 variables.append(frm.cam.q.q)
                 variables.append(frm.cam.t)
+                variables.append(np.array((frm.cam.fx, frm.cam.fy)))
         for p in self.pw:
             if p is not None:
                 variables.append(p.p)
@@ -308,7 +310,9 @@ class Map(object):
             if frm.status is True:
                 frm.cam.q = Quarternion(var[k: k + 4])
                 frm.cam.t = var[k + 4: k + 7]
-                k += 7
+                frm.cam.fx = var[k + 7]
+                frm.cam.fy = var[k + 8]
+                k += 9
 
         for p in self.pw:
             if p is not None:

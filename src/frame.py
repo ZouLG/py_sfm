@@ -26,18 +26,6 @@ class Frame:
         self.img_data = None    # for debug use
 
     @staticmethod
-    def detect_kps_old(img, detector, response_th=0.02):
-        kps_all, des_all = detector.detectAndCompute(img, None)
-        pi, des = [], []
-        for i, kp in enumerate(kps_all):
-            if kp.response < response_th:
-                continue
-            pi.append(np.array(kp.pt))
-            des.append(des_all[i])
-        pi = np.row_stack(pi)
-        return pi, des
-
-    @staticmethod
     def detect_kps(img, detector, response_th=0.0, num_per_blk=7):
         def insert_kp(arr, kp, idx):
             if len(arr) < num_per_blk:
@@ -57,7 +45,6 @@ class Frame:
         height, width = img.shape
         blk_h, blk_w = 64, 64
         m, n = int(math.ceil(width / blk_w)), int(math.ceil(height / blk_w))
-        # kps_idx = [[[]] * m] * n
         kps_idx = []
         for i in range(n):
             kps_idx.append([])
@@ -110,7 +97,34 @@ class Frame:
         plt.imshow(img2)
 
     @staticmethod
-    def flann_match_kps(des1, des2, knn_ratio=0.5):
+    def flann_match_kps(des1, des2, knn_ratio=0.7):
+        """
+            match current frame's kps with pts in the point cloud
+            kps_list: kps of the match frame
+        """
+        if len(des1) == 0 or len(des2) == 0:
+            return [], []
+        # index_params = dict(algorithm=0, trees=5)
+        # search_params = dict(checks=50)
+        # matcher = cv2.FlannBasedMatcher(index_params, search_params)
+        matcher = cv2.BFMatcher()
+        matches = matcher.knnMatch(des1, des2, k=2)
+        pair = {}
+        for match in matches:
+            if match[0].distance < match[1].distance * knn_ratio:
+                pair[match[0].queryIdx] = match[0].trainIdx
+
+        matches = matcher.knnMatch(des2, des1, k=2)
+        idx0, idx1 = [], []
+        for match in matches:
+            if match[0].distance < match[1].distance * knn_ratio:
+                if match[0].trainIdx in pair and pair[match[0].trainIdx] == match[0].queryIdx:
+                    idx0.append(match[0].trainIdx)
+                    idx1.append(match[0].queryIdx)
+        return idx0, idx1
+
+    @staticmethod
+    def flann_match_kps_old(des1, des2, knn_ratio=0.5):
         """
             match current frame's kps with pts in the point cloud
             kps_list: kps of the match frame

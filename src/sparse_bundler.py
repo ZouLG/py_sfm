@@ -1,4 +1,4 @@
-from jacobian import derr_over_dcam, derr_over_dpw
+from jacobian import derr_over_dcam, derr_over_dpw, derr_over_df
 from optimizer import Optimizer
 from map import Map
 import numpy as np
@@ -36,7 +36,7 @@ class SparseBa(Optimizer):
     def __init__(self, graph):
         assert isinstance(graph, Map)
         self.graph = graph
-        self.cam_block_size = (2, 7)
+        self.cam_block_size = (2, 9)
         self.point_block_size = (2, 3)
         self.radius = 2e-4
         self.loss = np.Inf
@@ -50,7 +50,8 @@ class SparseBa(Optimizer):
                 fv = frm.cam.K[1, 1]
 
                 jcam = derr_over_dcam(q, frm.cam.t, fu, fv, self.graph.pw[i])
-                self.jc_data.append(jcam)
+                jfuv = derr_over_df(q, frm.cam.t, self.graph.pw[i])
+                self.jc_data.append(np.column_stack((jcam, jfuv)))
                 self.indices_c.append(frm_idx)
 
                 jpoint = derr_over_dpw(q, frm.cam.t, fu, fv, self.graph.pw[i])
@@ -121,7 +122,7 @@ class SparseBa(Optimizer):
         self.graph.set_variables(var)
 
     def solve_lm(self):
-        self.radius = 2e-4   # reset
+        self.radius = 2e-3   # reset
         iteration = 0
         while True:
             iteration += 1
@@ -144,7 +145,7 @@ class SparseBa(Optimizer):
                 dx = solve_block_equation([hcc, self.hcp, self.hpc, hpp], [bc, bp])
                 var = var_bak + dx
                 rpj_err, loss = self.calc_reprojection_err(var)
-                if self.loss - loss > 2e-4:     # converge condition
+                if self.loss - loss > 5e-4:     # converge condition
                     self.graph.set_variables(var)
                     terminate_flag = False
                     self.radius /= 10

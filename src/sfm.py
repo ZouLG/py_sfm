@@ -16,19 +16,20 @@ class Sfm(object):
         plt.figure()
         ax = plt.gca(projection='3d')
         for k, img in enumerate(self.img_name_list):
-            if k in [0, 1, 2]:
-                self.map.add_a_frame(Frame(), img, 3)
+            if k in [2, 3, 4, 5]:
+                self.map.add_a_frame(Frame(), img, 1)
 
         self.map.sort_kps_in_frame()
-        self.map.initialize(k=1)
+        self.map.initialize(k=5)
         self.map.sort_kps()
-        self.ba.solve_lm()
         save_to_ply(self.map.pw, "../data/pcd_init.ply")
+        self.ba.solve_lm()
+        save_to_ply(self.map.pw, "../data/pcd_refine.ply")
 
-        # Frame.draw_common_kps(frm1, frm2)
-        # Frame.draw_kps(frm1.img_data, frm1.pi)
-        # Frame.draw_kps(frm2.img_data, frm2.pi)
-        # plt.show()
+        Frame.draw_common_kps(self.map.frames[0], self.map.frames[1])
+        # Frame.draw_kps(self.map.frames[0].img_data, self.map.frames[0].pi)
+        # Frame.draw_kps(self.map.frames[1].img_data, self.map.frames[1].pi)
+        plt.pause(0.5)
 
         while True:
             status, frm = self.map.localise_a_frame()
@@ -38,29 +39,10 @@ class Sfm(object):
                 self.map.sort_kps()
                 self.ba.solve_lm()
                 save_to_ply(self.map.pw, "../data/pcd_%d.ply" % frm.frm_idx)
-                print("%d frames located" % self.map.fixed_frm_num)
-                print("%d points reconstructed" % self.map.fixed_pt_num)
+                print("frame %d added. %d frames and %d points reconstructed" %
+                      (frm.frm_idx, self.map.fixed_frm_num, self.map.fixed_pt_num))
             else:
                 break
-
-        # for frm in self.map.frames:
-        #     if frm.status is True:
-        #         continue
-        #     print("locating frame %d..." % frm.frm_idx)
-        #     self.map.localization(frm)
-        #     if frm.status is not True:
-        #         continue
-        #     else:
-        #         self.ba.solve_lm()
-        #
-        #     print("reconstructing frame %d..." % frm.frm_idx)
-        #     self.map.reconstruction(frm)
-        #     self.map.sort_kps()
-        #     self.ba.solve_lm()
-        #
-        #     save_to_ply(self.map.pw, "../data/pcd_%d.ply" % frm.frm_idx)
-        #     print("%d frames located" % self.map.fixed_frm_num)
-        #     print("%d points reconstructed" % self.map.fixed_pt_num)
 
         self.map.plot_map(ax)
 

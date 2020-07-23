@@ -30,16 +30,12 @@ def triangulation(n1, n2, p1, p2):
     a2 = geo.quadratic_form(n2, N1, delt)
     b2 = geo.quadratic_form(n2, N1, n2)
     t2 = -a2 / b2
-    # if t2 < 0:
-    #     t2 = 1
     v2 = t2 * n2
     P2 = Point3D(p2 + v2)
 
     a1 = geo.quadratic_form(n1, N2, -delt)
     b1 = geo.quadratic_form(n1, N2, n1)
     t1 = -a1 / b1
-    # if t1 < 0:
-    #     t1 = 1
     v1 = t1 * n1
     P1 = Point3D(p1 + v1)
     P = (P1 + P2) / 2
