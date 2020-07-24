@@ -56,6 +56,15 @@ class Map(object):
         pc2 = cam2.project_world2camera([pw])
         if pc1[0].z <= cam1.f or pc2[0].z <= cam2.f:
             return False, np.Inf
+
+        c1 = cam1.get_camera_center()
+        c2 = cam2.get_camera_center()
+        n1 = c1 - pw
+        n2 = c2 - pw
+        theta = np.matmul(n1, n2) / np.linalg.norm(n1) / np.linalg.norm(n2)
+        if np.abs(theta) > 0.9965:  # 0.9984
+            return False, np.Inf
+
         pi1 = cam1.project_camera2image(pc1)
         pi2 = cam2.project_camera2image(pc2)
         err1 = np.linalg.norm(pi1 - _pi1)
@@ -197,12 +206,13 @@ class Map(object):
                 resize_scale = 1
                 if len(args) > 1:
                     resize_scale = args[1]
-                f, fx, fy, img_w, img_h = Frame.get_exif_info(args[0])
-                img_w = int(img_w / resize_scale)
-                img_h = int(img_h / resize_scale)
+                f, fx, fy, _, _ = Frame.get_exif_info(args[0])
                 fx /= resize_scale
                 fy /= resize_scale
                 color = cv2.imread(args[0])
+                img_h, img_w, _ = color.shape
+                img_w = int(img_w / resize_scale)
+                img_h = int(img_h / resize_scale)
                 color = cv2.resize(color, (img_w, img_h))
                 gray = cv2.cvtColor(color, cv2.COLOR_RGB2GRAY)
                 frm.img_data = color    # for debug use
