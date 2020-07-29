@@ -13,10 +13,8 @@ class Sfm(object):
         self.ba = SparseBa(self.map)
 
     def reconstruct(self):
-        plt.figure()
-        ax = plt.gca(projection='3d')
         for k, img in enumerate(self.img_name_list):
-            if k in range(6):
+            if k in [4, 5, 6]:
                 self.map.add_a_frame(Frame(), img, 1)
 
         self.map.sort_kps_in_frame()
@@ -26,6 +24,7 @@ class Sfm(object):
         save_to_ply(self.map.pw, "../data/pcd_init.ply")
 
         # Frame.draw_common_kps(self.map.frames[0], self.map.frames[1])
+        # Frame.draw_common_kps(self.map.frames[1], self.map.frames[2])
         # Frame.draw_kps(self.map.frames[0].img_data, self.map.frames[0].pi)
         # Frame.draw_kps(self.map.frames[1].img_data, self.map.frames[1].pi)
         # plt.pause(0.5)
@@ -38,16 +37,24 @@ class Sfm(object):
                 save_to_ply(self.map.pw, "../data/pcd_%d_before.ply" % frm.frm_idx)
                 self.map.sort_kps()
                 self.ba.solve_lm()
+                frm.draw_re_project_error(self.map.pw)
+                self.map.filter_point(frm)
+                self.ba.solve_lm()
+                frm.draw_re_project_error(self.map.pw)
+                plt.show()
                 save_to_ply(self.map.pw, "../data/pcd_%d.ply" % frm.frm_idx)
                 print("frame %d added. total %d frames and %d points reconstructed" %
                       (frm.frm_idx, self.map.fixed_frm_num, self.map.fixed_pt_num))
             else:
                 break
+
+        plt.figure()
+        ax = plt.gca(projection='3d')
         self.map.plot_map(ax)
 
 
 if __name__ == "__main__":
-    # sfm = Sfm("../data/data_qinghuamen/image data/")
-    sfm = Sfm("../data/GustavIIAdolf/")
+    sfm = Sfm("../data/data_qinghuamen/image data/")
+    # sfm = Sfm("../data/GustavIIAdolf/")
     sfm.reconstruct()
     plt.show()

@@ -96,8 +96,28 @@ class Frame:
         plt.figure()
         plt.imshow(img2)
 
+    def draw_re_project_error(self, pw_map):
+        img = self.img_data.copy()
+        error = []
+        for i, k in enumerate(self.kps_idx):
+            if k is not np.Inf and pw_map[k] is not None:
+                pi, pc = self.cam.project_world2image([pw_map[k]])
+                pi_ = self.pi[i]
+                color = tuple(np.random.randint(0, 255, (3,)).tolist())
+                cv2.circle(img, tuple(pi.reshape((-1, )).astype(int)),
+                           radius=12, color=color, thickness=3)
+                cv2.circle(img, tuple(pi_.astype(int)),
+                           radius=7, color=color, thickness=-1)
+                error.append(np.linalg.norm(pi - pi_))
+        plt.figure()
+        plt.imshow(img)
+        plt.figure()
+        error.sort()
+        plt.stem(error)
+        return error
+
     @staticmethod
-    def flann_match_kps(des1, des2, knn_ratio=0.7):
+    def flann_match_kps(des1, des2, knn_ratio=0.8):
         """
             match current frame's kps with pts in the point cloud
             kps_list: kps of the match frame

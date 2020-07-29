@@ -11,7 +11,7 @@ class Map(object):
 
         self.match_map = []
         self.status = False
-        self.pj_err_th = 20
+        self.pj_err_th = 40
         self.total_err = 0
         self.detector = cv2.xfeatures2d_SIFT.create()
         self.scale = 100
@@ -62,7 +62,7 @@ class Map(object):
         n1 = c1 - pw
         n2 = c2 - pw
         theta = np.matmul(n1, n2) / np.linalg.norm(n1) / np.linalg.norm(n2)
-        if np.abs(theta) > 0.9965:  # 0.9984
+        if np.abs(theta) > 0.9996:  # 0.9965
             return False, np.Inf
 
         pi1 = cam1.project_camera2image(pc1)
@@ -72,6 +72,15 @@ class Map(object):
         if err1 > threshold or err2 > threshold:
             return False, err1 + err2
         return True, err1 + err2
+
+    def filter_point(self, frm):
+        for i, k in enumerate(frm.kps_idx):
+            if k is not np.Inf and self.pw[i] is not None:
+                pi, pc = frm.cam.project_world2image([self.pw[i]])
+                pi_ = frm.pi[i]
+                err = np.linalg.norm(pi - pi_)
+                if err > 5 or pc[0].z < 1:
+                    frm.kps_idx[i] = np.Inf
 
     def reconstruction(self, frm):
         if frm.status is False:
@@ -128,7 +137,7 @@ class Map(object):
                 pw_valid.append(pw[k])
                 idx_valid.append(p)
                 rpj_err += err
-        return pw_valid, idx_valid, rpj_err / len(pw_valid)
+        return pw_valid, idx_valid, rpj_err / (len(pw_valid) or 1)
 
     def initialize(self, k=3):
         def find_k_most(k, matches, match_num, match, num):
@@ -142,7 +151,7 @@ class Map(object):
                 return
 
             cur = -1
-            for i in range(-2, -len(match_num), -1):
+            for i in range(-2, -len(match_num) - 1, -1):
                 if match_num[i] < num:
                     swap(match_num, i, cur)
                     swap(matches, i, cur)

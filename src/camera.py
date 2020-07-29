@@ -42,7 +42,7 @@ def triangulation(n1, n2, p1, p2):
     return P, P1, P2
 
 
-def camera_triangulation(camera1, camera2, p2d1, p2d2):
+def camera_triangulation_old(camera1, camera2, p2d1, p2d2):
     """
     get the back-projected 3D points from the 2D key-points in two different views
         camera1 & camera2: the two cameras
@@ -66,6 +66,29 @@ def camera_triangulation(camera1, camera2, p2d1, p2d2):
         p3d1.append(P1)
         p3d2.append(P2)
     return p3d, p3d1, p3d2
+
+
+def camera_triangulation(camera1, camera2, p2d1, p2d2):
+    """
+    get the back-projected 3D points from the 2D key-points in two different views
+        camera1 & camera2: the two cameras
+        p2d1: Nx2 array which stores the 2D key-points of camera1
+        p2d2: Nx2 array which stores the 2D key-points of camera2
+        return: p3d1 & p3d2 is the list of 3D points lie in the two back-projected rays, and p3d lies in the middle
+    """
+    assert p2d1.shape == p2d2.shape
+    pc1 = camera1.project_image2camera(p2d1)
+    pc2 = camera2.project_image2camera(p2d2)
+    r = np.matmul(camera2.R, camera1.R.T)
+    a = np.matmul(r, camera1.t) - camera2.t
+    p3d = []
+    for p, q in zip(pc1, pc2):
+        b = geo.cross_mat(q.p)
+        x = np.matmul(np.matmul(b, r), p.p)
+        y = np.matmul(b, a)
+        s1 = np.matmul(x, y) / np.matmul(x, x)
+        p3d.append(Point3D(np.matmul(camera1.R.T, s1 * p.p - camera1.t)))
+    return p3d, None, None
 
 
 class PinHoleCamera(object):
@@ -403,32 +426,38 @@ def check_validation_rt(Rlist, tlist, pc1, pc2):
 #                      test cases
 #######################################################
 def test_camera_func():
+    import matplotlib.pyplot as plt
     plt.figure()
     ax = plt.gca(projection='3d')
-    p1 = Point3D([5, 5, 7])
+    p1 = Point3D([2, 6, 7])
     p1.plot3d(ax, s=5)
 
     R = geo.rodriguez((1, 1, 1), np.pi / 4)
-    camera1 = PinHoleCamera(R, np.ones((3,)))
-    camera2 = PinHoleCamera.place_a_camera((0, 0, 0), (0, 0, 1), (0, 1, 0), f=2.0, fx=1000, fy=1000)
+    camera1 = PinHoleCamera(R=R)
+    camera2 = PinHoleCamera(R=R, t=np.array((-4, -4, 0)))
     camera1.show(ax)
-    # camera2.show(ax)
+    camera2.show(ax)
 
-    pi = np.array([[1920, 1080]])
-    pc = camera1.project_image2camera(pi)
-    pi_ = camera1.project_camera2image(pc)
-    print(pi_)
-    print(pc)
+    pi1, _ = camera1.project_world2image([p1])
+    pi2, _ = camera2.project_world2image([p1])
+    pw, _, _ = camera_triangulation(camera1, camera2, pi1, pi2)
+    print(pw)
 
-    pw = camera1.project_camera2world(pc)
-    pc_ = camera1.project_world2camera(pw)
-    print(pc_)
-    pw[0].plot3d(ax, s=5, marker='x', color='red')
+    # pi = np.array([[1920, 1080]])
+    # pc = camera1.project_image2camera(pi)
+    # pi_ = camera1.project_camera2image(pc)
+    # print(pi_)
+    # print(pc)
+    #
+    # pw = camera1.project_camera2world(pc)
+    # pc_ = camera1.project_world2camera(pw)
+    # print(pc_)
+    # pw[0].plot3d(ax, s=5, marker='x', color='red')
 
-    camera1.show_projection(ax, [p1])
-    img = camera1.get_projected_img([p1])
-    plt.figure()
-    plt.imshow(img)
+    # camera1.show_projection(ax, [p1])
+    # img = camera1.get_projected_img([p1])
+    # plt.figure()
+    # plt.imshow(img)
 
     ax.set_xlim([-3, 10])
     ax.set_ylim([-3, 10])
@@ -459,5 +488,5 @@ def test_decompose():
 
 
 if __name__ == "__main__":
-    # test_camera_func()
-    test_decompose()
+    test_camera_func()
+    # test_decompose()
