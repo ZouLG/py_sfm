@@ -1,9 +1,10 @@
-from point import *
+import cv2
+import random
+import numpy as np
+from point import Point3D, list2mat
 from camera import PinHoleCamera
 import geometry as geo
-import random
 from optimizer import EpnpSolver
-import cv2
 
 
 def get_control_points(pw):
@@ -64,10 +65,6 @@ def find_beta_n1(v, ctrl_pw):
     dist_c = calc_dist(ctrl_pc)
     dist_w = calc_dist(ctrl_pw)
     scale = calc_sign(ctrl_pc) * np.matmul(dist_w, dist_c) / np.matmul(dist_c, dist_c)
-    # for i in range(len(ctrl_pc)):
-    #     ctrl_pc[i].p = ctrl_pc[i].p * scale
-    # R, t = geo.recover_Rt(ctrl_pc, ctrl_pw)
-    # return R, t
     return np.array([0, 0, 0, scale])
 
 
@@ -152,14 +149,14 @@ def estimate_pose_epnp(K, pw, pi, ctrl_num=4):
     return R, t
 
 
-def ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
+def epnp_ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
     """
-        estimate camera pose through epnp in ransac method
-        K: camera intrinsic param
-        pw: point coordinates in world-frame
+        estimate PinHoleCamera pose through epnp with ransac method
+        K: PinHoleCamera intrinsic param
+        pw: Point3D coordinates in world-Frame
         pi: image key-points
         iter: ransac times
-        return: camera pose (R, t) and inlier pw & pi
+        return: PinHoleCamera pose (R, t) and inlier pw & pi
     """
     def get_inliers(cam, pw, pi, threshold):
         idx = []
@@ -188,7 +185,7 @@ def ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
             continue
         pw_tmp, pi_tmp = get_by_idx(pw, pi, index)
         R, t = estimate_pose_epnp(K, pw_tmp, pi_tmp)
-        cam = PinHoleCamera(R, t, K=K)
+        cam = PinHoleCamera(R=R, t=t, K=K)
         inliers = get_inliers(cam, pw, pi, threshold)
         if len(inliers) > len(inlier_best):
             inlier_best = inliers
@@ -203,7 +200,7 @@ def ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
     while True:
         pw_tmp, pi_tmp = get_by_idx(pw, pi, inlier_best)
         R, t = estimate_pose_epnp(K, pw_tmp, pi_tmp)
-        cam = PinHoleCamera(R, t, K=K)     # sx = 0.002
+        cam = PinHoleCamera(R=R, t=t, K=K)     # sx = 0.002
         inliers = get_inliers(cam, pw, pi, threshold)
         if len(inliers) > len(inlier_best):
             inlier_best = inliers
@@ -213,7 +210,7 @@ def ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
     return R_best, t_best, inlier_best
 
 
-def solve_pnp(K, pw, pi, use_cv2=False):
+def solve_pnp(K, pw, pi, use_cv2=True):
     if use_cv2:
         state, rv, t = cv2.solvePnP(list2mat(pw), pi, K, 0)
         R = geo.rodriguez(rv, np.linalg.norm(rv))
@@ -222,33 +219,36 @@ def solve_pnp(K, pw, pi, use_cv2=False):
         return estimate_pose_epnp(K, pw, pi)
 
 
-def solve_pnp_ransac(K, pw, pi, iter=100, threshold=5, use_cv2=False):
+def solve_pnp_ransac(K, pw, pi, iteration=100, threshold=5, use_cv2=True):
     if use_cv2:
         state, rv, t, inliers = cv2.solvePnPRansac(list2mat(pw), pi, K, 0)
         R = geo.rodriguez(rv, np.linalg.norm(rv))
         return R, np.squeeze(t), inliers.tolist()
     else:
-        return ransac_estimate_pose(K, pw, pi, iter=iter, threshold=threshold)
+        R, t, inliers = epnp_ransac_estimate_pose(
+            K, pw, pi,
+            iter=iteration,
+            threshold=threshold
+        )
+        return R, t, inliers
 
 
 if __name__ == "__main__":
     from data import *
     pw = generate_rand_points(20, [0, 0, 10], [4, 4, 4])
-    save_points_to_file(pw, "../data/pw.dat")
-    # pw = read_points_from_file("../data/pw.dat")
 
-    camera = PinHoleCamera.place_a_camera((1, 1, 1), (-1, -1, 1), (1, 0, 0))
-    pi, _ = camera.project_world2image(pw)
+    PinHoleCamera = PinHoleCamera.place_a_camera((1, 1, 1), (-1, -1, 1), (1, 0, 0))
+    pi, _ = PinHoleCamera.project_world2image(pw)
     pi += np.random.normal(0.0, 7, pi.shape)
     pi.tofile("../data/pi.dat")
     # pi = np.fromfile("../data/pi.dat").reshape((-1, 2))
-    R, t = estimate_pose_epnp(camera.K, pw, pi)
+    R, t = estimate_pose_epnp(PinHoleCamera.K, pw, pi)
 
-    Rcv, tcv, _ = solve_pnp_ransac(camera.K, pw, pi)
+    Rcv, tcv, _ = solve_pnp_ransac(PinHoleCamera.K, pw, pi)
 
     print("R = \n", R)
     print("t = \n", t)
-    print("R* = \n", camera.R)
-    print("t* = \n", camera.t)
+    print("R* = \n", PinHoleCamera.R)
+    print("t* = \n", PinHoleCamera.t)
     print("Rv = \n", Rcv)
     print("tv = \n", tcv)

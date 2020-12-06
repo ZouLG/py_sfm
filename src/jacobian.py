@@ -10,7 +10,7 @@ def derr_over_dpc(q, t, fu, fv, pw):
 
 def derr_over_dcam(q, t, fu, fv, pw):
     """
-        2x7 jacobian matrix of derivative err to camera pose, 4 for q, 3 for t
+        2x7 jacobian matrix of derivative err to PinHoleCamera pose, 4 for q, 3 for t
     """
     n = q.norm()
     dedpc = derr_over_dpc(q, t, fu, fv, pw)

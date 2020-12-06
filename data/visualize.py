@@ -1,3 +1,4 @@
+import sys
 import open3d as o3d
 import numpy as np
 
@@ -18,5 +19,6 @@ def plot_pcd(file_name, scale=1, filter_radius=np.Inf):
 
 
 if __name__ == "__main__":
-    pcd_file = "../data/qinghuamen.ply"
-    plot_pcd(pcd_file, scale=1, filter_radius=100)
+    # pcd_file = "../data/init.ply"
+    pcd_file = sys.argv[1]
+    plot_pcd(pcd_file, scale=1, filter_radius=np.Inf)

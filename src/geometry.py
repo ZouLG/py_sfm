@@ -1,4 +1,27 @@
-from point import *
+import numpy as np
+from point import Point3D, list2mat, mat2list
+
+
+def solve_ls_fitting(x1, x2, index=None):
+    num = x1.shape[0]
+    index = index or range(num)
+    A = np.zeros((num, 9))
+    for i in index:
+        A[i, :] = np.matmul(x2[i, :].reshape((3, 1)), x1[i, :].reshape((1, 3))).reshape((9,))
+    _, s, v = np.linalg.svd(A)
+    if s[-2] < 1e-3:    # rank of A should be exact 8
+        return None
+    else:
+        E = v[-1, :].reshape((3, 3))    # eigenvector of the smallest eigenvalue
+        return E
+
+
+def project_to_essential_space(E):
+    u, s, v = np.linalg.svd(E)
+    sigma = (s[0] + s[1]) / 2
+    d = np.diag([sigma, sigma, 0.0])
+    e = np.matmul(np.matmul(u, d), v)
+    return e
 
 
 def calc_min_dis(a, b):
@@ -93,9 +116,9 @@ def line2line_distance(n1, p1, n2, p2):
     """
     calculate the distance between 3d lines
         n1: the direction vector of the first line
-        p1: a point lies in the first line
+        p1: a Point3D lies in the first line
         n2: the direction vector of the second line
-        p2: a point lies in the second line
+        p2: a Point3D lies in the second line
         return: the distance
     """
     n1 = n1 / np.linalg.norm(n1)

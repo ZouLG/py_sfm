@@ -1,15 +1,3 @@
-from point import *
-
-
-def set_axis_limit(ax, low, high, zlow=-10, zhigh=10):
-    ax.set_xlim([low, high])
-    ax.set_ylim([low, high])
-    ax.set_zlim([zlow, zhigh])
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
-
-
 def binary_search(g, k):
     start = 0
     end = len(g) - 1
@@ -30,32 +18,17 @@ def swap(arr, m, n):
     arr[n] = tmp
 
 
-def save_to_ply(pw, file, scale=1, filter_radius=np.Inf):
-    pw = [p for p in pw if isinstance(p, Point3D)]
-    data = list2mat(pw)
-    center = np.median(data, axis=0)
-    pw_filter = []
-    for p in data:
-        if np.linalg.norm(p - center) > filter_radius:
-            continue
-        pw_filter.append((p - center) * scale)
-    data = np.row_stack(pw_filter)
+def save_k_most(k, arr, element, cmp=lambda x, y: x > y):
+    if len(arr) < k:
+        arr.append(element)
+    elif cmp(element, arr[-1]):
+        arr[-1] = element
+    else:
+        return
 
-    ply_head = ["ply", "format ascii 1.0", "comment Created by Python Sfm",
-                "element vertex %d" % len(data), "property float x",
-                "property float y", "property float z", "end_header"]
-    with open(file, 'w') as f:
-        for s in ply_head:
-            f.writelines(s + "\n")
-        for p in data:
-            f.writelines("%f %f %f\n" % (p[0], p[1], p[2]))
-    print("save %d points" % data.shape[0])
-
-
-def plot_ply(file):
-    pass
-
-
-if __name__ == "__main__":
-    file_name = "../data/test.ply"
-    save_to_ply([Point3D((0, 0, 0)), Point3D((0, 1, 0))], file_name)
+    cur = -1
+    for i in range(-2, -len(arr) - 1, -1):
+        if cmp(arr[i], element):
+            return
+        swap(arr, i, cur)
+        cur = i

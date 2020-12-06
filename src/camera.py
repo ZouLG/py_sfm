@@ -1,9 +1,19 @@
-import numpy as np
-import random
-from point import Point3D, list2mat
-import geometry as geo
 import cv2
+import random
+import numpy as np
+import geometry as geo
+from point import Point3D, list2mat
 from quarternion import Quarternion
+
+__all__ = [
+    "PinHoleCamera",
+    "camera_triangulation",
+    "get_null_space_ransac",
+    "check_validation_rt",
+    "decompose_essential_mat",
+    "ransac_estimate_pose",
+    "ransac_estimate_pose_old"
+]
 
 
 def point_project2line(o, n, p):
@@ -12,10 +22,10 @@ def point_project2line(o, n, p):
     return o + t * n
 
 
-def bundle_projection(camera, pw, pi):
-    pc = camera.project_image2camera(pi)
-    pcw = camera.project_camera2world(pc)
-    c = camera.get_camera_center()
+def bundle_projection(PinHoleCamera, pw, pi):
+    pc = PinHoleCamera.project_image2camera(pi)
+    pcw = PinHoleCamera.project_camera2world(pc)
+    c = PinHoleCamera.get_camera_center()
     pw_new = []
     for q, p in zip(pcw, pw):
         n = q - c
@@ -68,38 +78,44 @@ def camera_triangulation_old(camera1, camera2, p2d1, p2d2):
     return p3d, p3d1, p3d2
 
 
-def camera_triangulation(camera1, camera2, p2d1, p2d2):
+def camera_triangulation(camera1, camera2, pi1, pi2, filter=False):
     """
-    get the back-projected 3D points from the 2D key-points in two different views
+    get the back-projected 3D points from the 2D key-points in two views
         camera1 & camera2: the two cameras
-        p2d1: Nx2 array which stores the 2D key-points of camera1
-        p2d2: Nx2 array which stores the 2D key-points of camera2
-        return: p3d1 & p3d2 is the list of 3D points lie in the two back-projected rays, and p3d lies in the middle
+        pi1 & pi2: Nx2 array which stores the 2D key-points of the two cameras
+        filter: ignore points which have small view angles when filter is True
+        return: reconstructed points' coordinates in world-frame
     """
-    assert p2d1.shape == p2d2.shape
-    pc1 = camera1.project_image2camera(p2d1)
-    pc2 = camera2.project_image2camera(p2d2)
+    assert pi1.shape == pi2.shape
+    pc1 = camera1.project_image2camera(pi1)
+    pc2 = camera2.project_image2camera(pi2)
     r = np.matmul(camera2.R, camera1.R.T)
     a = np.matmul(r, camera1.t) - camera2.t
-    p3d = []
+    pw = []
     for p, q in zip(pc1, pc2):
         b = geo.cross_mat(q.p)
         x = np.matmul(np.matmul(b, r), p.p)
         y = np.matmul(b, a)
         s1 = np.matmul(x, y) / np.matmul(x, x)
-        p3d.append(Point3D(np.matmul(camera1.R.T, s1 * p.p - camera1.t)))
-    return p3d, None, None
+        pw.append(Point3D(np.matmul(camera1.R.T, s1 * p.p - camera1.t)))
+    return pw, None, None
 
 
 class PinHoleCamera(object):
-    def __init__(self, R=np.eye(3), t=np.zeros((3,)), **kwargs):
-        assert (np.abs(np.matmul(R, R.T) - np.eye(3)) < 1e-7).all(), "rotation mat should be Orthogonal"
-        self.__dict__['R'] = R
-        self.__dict__['t'] = t
-        self.__dict__['q'] = Quarternion.mat_to_quaternion(R)
-
+    def __init__(self, **kwargs):
         # intrinsic params
         f, fx, fy, img_w, img_h = [1.0, 500, 500, 1920, 1080]
+        if 'R' in kwargs:
+            R = kwargs['R']
+            assert R.shape == (3, 3), "rotation mat should be 3x3 matrix"
+        else:
+            R = np.eye(3)
+
+        if 't' in kwargs:
+            t = kwargs['t']
+        else:
+            t = np.zeros((3,))
+
         if 'f' in kwargs:
             f = kwargs['f']
         if 'fx' in kwargs:
@@ -116,9 +132,10 @@ class PinHoleCamera(object):
             fy = K[1, 1]
             img_w = K[0, 2] * 2
             img_h = K[1, 2] * 2
-        if 'q' in kwargs:
-            pass
 
+        self.__dict__['R'] = R
+        self.__dict__['t'] = t
+        self.__dict__['q'] = Quarternion.mat_to_quaternion(R)
         self.__dict__['f'] = f
         self.__dict__['fx'] = fx
         self.__dict__['fy'] = fy
@@ -162,7 +179,7 @@ class PinHoleCamera(object):
         ey = np.cross(ez, ex)
         R = np.row_stack((ex, ey, ez))
         t = -np.matmul(R, Point3D(p).p)
-        return PinHoleCamera(R, t, f=f, fx=fx, fy=fy, img_w=img_w, img_h=img_h)
+        return PinHoleCamera(R=R, t=t, f=f, fx=fx, fy=fy, img_w=img_w, img_h=img_h)
 
     def show(self, ax, color='blue', s=20):
         o = geo.rigid_inv_transform(Point3D((0, 0, 0)), self.R, self.t)
@@ -196,9 +213,9 @@ class PinHoleCamera(object):
 
     def project_image2camera(self, p2d):
         """
-        back-project the 2d image point to the homogeneous coordinate in camera frame
+        back-project the 2d image Point3D to the homogeneous coordinate in PinHoleCamera Frame
             p2d: Nx2 array of 2d key points
-            return: list of homogeneous 3d points of in the camera frame
+            return: list of homogeneous 3d points of in the PinHoleCamera Frame
         """
         p2d = np.column_stack((p2d, np.ones((p2d.shape[0], 1))))
         p3d_tmp = np.matmul(self.K_, p2d.T)
@@ -209,8 +226,8 @@ class PinHoleCamera(object):
 
     def project_camera2image(self, p3d):
         """
-        project the 3d points in the camera frame to 2d image frame
-            p3d: list of 3d Points in the camera frame
+        project the 3d points in the PinHoleCamera Frame to 2d image Frame
+            p3d: list of 3d Points in the PinHoleCamera Frame
             return: Nx2 array of 2d key points
         """
         N = len(p3d)
@@ -223,9 +240,9 @@ class PinHoleCamera(object):
 
     def project_camera2world(self, pc):
         """
-        back-project 3d points in the camera-frame to the world frame
+        back-project 3d points in the PinHoleCamera-Frame to the world Frame
             plist: list of 3d points of type Point3D
-            return: list of 3d points of in the world frame
+            return: list of 3d points of in the world Frame
         """
         pw = []
         for p in pc:
@@ -235,9 +252,9 @@ class PinHoleCamera(object):
 
     def project_world2camera(self, pw):
         """
-        project 3d points in the world-frame to the camera frame
-            plist: list of 3d points of type Point3D in the world-frame
-            return: list of 3d points of in the camera frame
+        project 3d points in the world-Frame to the PinHoleCamera Frame
+            plist: list of 3d points of type Point3D in the world-Frame
+            return: list of 3d points of in the PinHoleCamera Frame
         """
         pc = []
         for p in pw:
@@ -246,8 +263,8 @@ class PinHoleCamera(object):
 
     def project_world2image(self, pw):
         """
-        project 3d points in the world-frame to the 2d image-frame
-            plist: list of 3d points of type Point3D in the world-frame
+        project 3d points in the world-Frame to the 2d image-Frame
+            plist: list of 3d points of type Point3D in the world-Frame
             return: Nx2 array in which each line is a projecting coordinate
         """
         pc = self.project_world2camera(pw)
@@ -284,7 +301,7 @@ class PinHoleCamera(object):
 
     def get_camera_center(self):
         """
-            get the coordinate of the camera center in the world-frame
+            get the coordinate of the PinHoleCamera center in the world-Frame
         """
         return Point3D(-np.matmul(self.R.T, self.t))
 
@@ -293,7 +310,7 @@ class PinHoleCamera(object):
 
     def calc_projection_error(self, pw, pi):
         """
-        project the 3d points in world-frame, calculate error between the projected 2d coordinates
+        project the 3d points in world-Frame, calculate error between the projected 2d coordinates
             with the real image coordinates
         """
         pi_, _ = self.project_world2image(pw)
@@ -312,22 +329,6 @@ def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=500):
     def calc_loss(E, x1, x2):
         return np.matmul(np.matmul(x2.reshape(1, -1), E), x1.reshape((-1, 1)))
 
-    def solve_ls_fitting(x1, x2, index):
-        N = x1.shape[0]
-        A = np.zeros((N, 9))
-        for i in index:
-            A[i, :] = np.matmul(x2[i, :].reshape((3, 1)), x1[i, :].reshape((1, 3))).reshape((9,))
-        _, _, V = np.linalg.svd(A)
-        F = V[8, :].reshape((3, 3))     # the eigenvector of the smallest eigen-value
-        return F
-
-    def project_to_essential_space(E):
-        U, S, V = np.linalg.svd(E)
-        sigma = (S[0] + S[1]) / 2
-        D = np.diag([sigma, sigma, 0.0])
-        e = np.matmul(np.matmul(U, D), V)
-        return e
-
     def get_inliers(E, x1, x2, eps):
         inliers = []
         for i in range(x1.shape[0]):
@@ -336,42 +337,46 @@ def get_null_space_ransac(x1, x2, eps=1e-5, max_iter=500):
                 inliers.append(i)
         return inliers
 
+    assert x1.shape == x2.shape, "shape of x1 & x2 is inconsistent."
     random.seed(0)
-    batchNum = 8
-    N = x1.shape[0]
+    batch_num = 8
+    num = x1.shape[0]
     inlier_best = []
-    E_best = np.eye(3)
+    Ebest = np.eye(3)
     ibest = 0
     for i in range(max_iter):
-        index = random.sample(range(N), batchNum)
-        E = solve_ls_fitting(x1, x2, index)
-        E = project_to_essential_space(E)
+        index = random.sample(range(num), batch_num)
+        E = geo.solve_ls_fitting(x1, x2, index)
+        if E is None:
+            continue
+        # E = geo.project_to_essential_space(E)
         inliers = get_inliers(E, x1, x2, eps)
         if len(inliers) > len(inlier_best):
-            ibest = i
             inlier_best = inliers
-            E_best = E
-        if len(inlier_best) > N * 0.7 or i - ibest > 50:
+            Ebest = E
+            ibest = i
+        if len(inlier_best) > num * 0.7 or i - ibest > 50:
             break
-
-    # print("ransac inliers num: %d" % len(inlier_best))
-    assert len(inlier_best) > 0
+    assert len(inlier_best) > 0, "there are not enough inlier matches"
 
     # iteration: use inliers to refine E matrix
     inliers = inlier_best
-    E = E_best
+    E = Ebest
     pre_len = 0
     while len(inliers) > pre_len:
         pre_len = len(inliers)
         inlier_best = inliers
-        E_best = E
-        E = solve_ls_fitting(x1, x2, inlier_best)
-        E = project_to_essential_space(E)
+        Ebest = E
+        E = geo.solve_ls_fitting(x1, x2, inlier_best)
+        if E is None:
+            continue
+        # E = geo.project_to_essential_space(E)
         inliers = get_inliers(E, x1, x2, eps)
-    return E_best, inlier_best
+    return Ebest, inlier_best
 
 
 def decompose_essential_mat(E):
+    E = geo.project_to_essential_space(E)
     # result of svd isn't unique, E is degenerate(has 2 same singular value, how to decompose E ????)
     U, Z, V = np.linalg.svd(E)
     Rz = np.array([[0., -1., 0.],
@@ -407,7 +412,7 @@ def check_validation_rt(Rlist, tlist, pc1, pc2):
         t = tlist[i]
         for j in range(len(Rlist)):
             R = Rlist[j]
-            camera2 = PinHoleCamera(R, t)
+            camera2 = PinHoleCamera(R=R, t=t)
             c2 = camera2.get_camera_center()
             pw2 = camera2.project_camera2world(pc2)
             n2 = [x - c2 for x in pw2]
@@ -420,6 +425,72 @@ def check_validation_rt(Rlist, tlist, pc1, pc2):
                 iopt = i
                 jopt = j
     return Rlist[jopt], tlist[iopt]
+
+
+def ransac_estimate_pose_old(
+    pi_ref,
+    pi_mat,
+    cam_ref,
+    cam_mat,
+    eps=1e-4,
+    max_iter=300,
+    t_scale=100
+):
+    assert pi_ref.shape == pi_mat.shape
+    pc1 = cam_ref.project_image2camera(pi_ref)
+    pc2 = cam_mat.project_image2camera(pi_mat)
+    try:
+        E, inliers = get_null_space_ransac(
+            x1=list2mat(pc1),
+            x2=list2mat(pc2),
+            eps=eps,
+            max_iter=max_iter
+        )
+    except:
+        print("Warning: there are not enough matching points")
+        return None, None, []
+
+    R_list, t_list = decompose_essential_mat(E)
+    R, t = check_validation_rt(R_list, t_list, pc1, pc2)
+    t *= t_scale
+    return R, t, inliers
+
+
+def ransac_estimate_pose(
+    pi_ref,
+    pi_mat,
+    cam_ref,
+    cam_mat,
+    eps=1e-4,
+    max_iter=300,
+    t_scale=100,
+    solve_pose=True
+):
+    assert pi_ref.shape == pi_mat.shape
+    num = len(pi_ref)
+    pih1 = np.column_stack((pi_ref, np.ones(num,)))
+    pih2 = np.column_stack((pi_mat, np.ones(num,)))
+    try:
+        F, inliers = get_null_space_ransac(
+            x1=pih1,
+            x2=pih2,
+            eps=eps,
+            max_iter=max_iter
+        )
+    except:
+        print("Warning: there are not enough matching points")
+        return None, None, []
+
+    E = np.matmul(np.matmul(cam_mat.K.T, F), cam_ref.K)
+    if not solve_pose:
+        return E, inliers
+
+    Rs, ts = decompose_essential_mat(E)
+    pc1 = cam_ref.project_image2camera(pi_ref)
+    pc2 = cam_mat.project_image2camera(pi_mat)
+    R, t = check_validation_rt(Rs, ts, pc1, pc2)
+    t *= t_scale
+    return R, t, inliers
 
 
 #######################################################
@@ -477,16 +548,16 @@ def test_decompose():
     pi1, pc1 = camera1.project_world2image(pw)
     pi2, pc2 = camera2.project_world2image(pw)
 
-    E, _ = get_null_space_ransac(list2mat(pc1), list2mat(pc2), eps=1e-3, max_iter=70)
-    R_list, t_list = decompose_essential_mat(E)
-    R_, t_ = check_validation_rt(R_list, t_list, pc1, pc2)
-    t_ = t_ * 15
+    R1, t1, _ = ransac_estimate_pose_old(pi1, pi2, camera1, camera2)
+    R2, t2, _ = ransac_estimate_pose(pi1, pi2, camera1, camera2)
     print("R* = \n", camera2.R)
     print("t* = \n", camera2.t)
-    print("R_ = \n", R_)
-    print("t_ = \n", t_)
+    print("R1 = \n", R1)
+    print("t1 = \n", t1)
+    print("R2 = \n", R2)
+    print("t2 = \n", t2)
 
 
 if __name__ == "__main__":
-    test_camera_func()
-    # test_decompose()
+    # test_camera_func()
+    test_decompose()

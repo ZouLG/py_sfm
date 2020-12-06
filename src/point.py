@@ -1,10 +1,12 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+
+__all__ = ["Point3D", "list2mat", "mat2list"]
 
 
-class Point3D:
+class Point3D(object):
     def __init__(self, vector):
+        super(Point3D, self).__init__()
         if isinstance(vector, Point3D):
             self.p = vector.p
         else:
@@ -69,13 +71,13 @@ class Point3D:
         if isinstance(b, Point3D):
             return self.p - b.p     # Point sub a Point result to vector
         else:
-            return Point3D(self.p - np.array(b))    # get the src point of the vector
+            return Point3D(self.p - np.array(b))    # get the src Point3D of the vector
 
     def __add__(self, b):
         if isinstance(b, Point3D):
             return Point3D(self.p + b.p)
         else:
-            return Point3D(self.p + np.array(b))    # Point add a vector result to another point
+            return Point3D(self.p + np.array(b))    # Point add a vector result to another Point3D
 
     def __mul__(self, b):
         if isinstance(b, Point3D):
@@ -116,23 +118,6 @@ def mat2list(mat):
     return plist
 
 
-def get_point_by_idx(points, idx):
-    if isinstance(points, list):
-        return [points[i] for i in idx]
-    else:
-        return points[idx, :]
-
-
-def save_points_to_file(plist, file_name):
-    mat = list2mat(plist)
-    mat.tofile(file_name)
-
-
-def read_points_from_file(file_name):
-    mat = np.fromfile(file_name, np.float32).reshape((-1, 3))
-    return mat2list(mat)
-
-
 if __name__ == "__main__":
     R = np.eye(3)
     t = [1, 0, 2]
@@ -143,7 +128,6 @@ if __name__ == "__main__":
     v1 = p1 - p2
     print(v1)
 
-    plane1 = ImgPlane((0, 0, 0), (0, 1, 0), (1, 1, 0), (1, 1, 1))
     fig = plt.figure()
     ax = fig.gca(projection='3d')
     plane1.show(ax)

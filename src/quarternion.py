@@ -77,7 +77,7 @@ class Quarternion(object):
 
 
 if __name__ == "__main__":
-    # test rotation with quarternion
+    # test rotation with Quarternion
     a = Quarternion((1, -1, -1, -1))
     Ra = Quarternion.quaternion_to_mat(a)
     p = (1, -1, 1)
