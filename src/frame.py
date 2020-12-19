@@ -5,7 +5,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from point import *   # noqa
 from camera import *    # noqa
-from utils import binary_search, swap
+from utils import swap
 
 __all__ = ["get_common_points", "draw_kps", "draw_matched_pts", "Frame"]
 
@@ -58,8 +58,9 @@ def draw_common_kps(frm1, frm2, radius=None):
         cv2.circle(img2, tuple(q.astype(int)), radius=radius, color=color, thickness=5)
     print("common kps num = %d" % len(pw_idx))
     plt.figure()
+    plt.subplot(121)
     plt.imshow(img1)
-    plt.figure()
+    plt.subplot(122)
     plt.imshow(img2)
 
 
@@ -76,8 +77,9 @@ def draw_matched_pts(img1, img2, pts1, pts2, radius=None):
         cv2.circle(img2, tuple(q.astype(int)),
                    radius=radius, color=color, thickness=5)
     plt.figure()
+    plt.subplot(121)
     plt.imshow(img1)
-    plt.figure()
+    plt.subplot(122)
     plt.imshow(img2)
 
 
@@ -229,17 +231,30 @@ class Frame(object):
         fy = f / sy
         return {"f": f, "fx": fx, "fy": fy, "img_w": img_w, "img_h": img_h}
 
-    def draw_re_project_error(self, points):
+    def calc_projection_error(self, pt_idx, pt):
+        assert pt_idx in self.pw_pi, \
+            "point %d is not viewed in frame %d" % (pt_idx, self.frm_idx)
+        pi = self.pi[self.pw_pi[pt_idx]]
+        err = self.cam.calc_projection_error([pt], pi)
+        return err
+
+    def draw_re_project_error(self, point_map, threshold=None):
         img = self.img_data.copy()
         radius = max(img.shape) // 200
         error = []
         for k in self.pw_pi:
-            if points[k] is not None:
-                pi, pc = self.cam.project_world2image([points[k]])
+            if point_map[k] is not None:
+                pi, pc = self.cam.project_world2image([point_map[k]])
                 pi_ = self.pi[self.pw_pi[k]]
-                color = tuple(np.random.randint(0, 255, (3,)).tolist())
+                if threshold is None:
+                    color = tuple(np.random.randint(0, 255, (3,)).tolist())
+                elif np.sqrt(np.sum((pi - pi_) ** 2)) > threshold:
+                    color = (255, 0, 0)
+                else:
+                    color = (0, 0, 255)
+
                 cv2.circle(img, tuple(pi.reshape((-1, )).astype(int)),
-                           radius=radius, color=color, thickness=-1)
+                           radius=radius // 2, color=color, thickness=-1)
                 cv2.circle(img, tuple(pi_.astype(int)),
                            radius=radius, color=color, thickness=1)
                 error.append(np.linalg.norm(pi - pi_))

@@ -314,7 +314,7 @@ class PinHoleCamera(object):
             with the real image coordinates
         """
         pi_, _ = self.project_world2image(pw)
-        err = np.linalg.norm(pi - pi_) / len(pw)
+        err = np.sqrt(np.sum((pi - pi_) ** 2) / len(pw))
         return err
 
 

@@ -16,13 +16,17 @@ class Config(object):
         self.double_check = True
 
         # essential matrix param
-        self.e_threshold = 5e-4
+        self.e_threshold = 5e-5
         self.ransac_iter = 300
 
-        # epnp params
-        self.pnp_pts_num = 20
+        # pnp params
+        self.pnp_pts_num = 50
         self.least_match_num = 20
-        self.pj_err_th = np.Inf
+        self.pnp_pj_th = 50
+
+        # param for filtering error points
+        self.pj_err_th = 20
+        self.filter_th = 5
 
         self.scale = 100
         self.window_size = 1e9
@@ -57,7 +61,7 @@ class LocalMap(object):
             assert frm.status is True, "Frame %d pose is unknown!" % frm.frm_idx
             variables.append(frm.cam.q.q)
             variables.append(frm.cam.t)
-            variables.append(np.array((frm.cam.fx, frm.cam.fy)))
+            # variables.append(np.array((frm.cam.fx, frm.cam.fy)))
 
         for pt_idx in self.pw_index:
             p = self.global_map.pw[pt_idx]
@@ -72,15 +76,35 @@ class LocalMap(object):
             assert frm.status is True, "Frame %d pose is unknown!" % frm.frm_idx
             frm.cam.q = Quarternion(var[k: k + 4])
             frm.cam.t = var[k + 4: k + 7]
-            frm.cam.fx = var[k + 7]
-            frm.cam.fy = var[k + 8]
-            k += 9
+            # frm.cam.fx = var[k + 7]
+            # frm.cam.fy = var[k + 8]
+            k += 7
 
         for pt_idx in self.pw_index:
             p = self.global_map.pw[pt_idx]
             assert p is not None, "Point3D %d is unknown" % pt_idx
             p.p = var[k: k + 3]
             k += 3
+
+    def filter_error_points(self):
+        pt_num, landmark_num = 0, 0
+        for p in self.pw_index:
+            pt = self.global_map.pw[p]
+            for f in self.global_map.viewed_frames[p].copy():
+                frm = self.global_map.frames[f]
+                if frm.status is False:
+                    continue
+                err = frm.calc_projection_error(p, pt)
+                # remove the landmark from this frame when projection error is big
+                if err > self.global_map.config.filter_th:
+                    landmark_num += 1
+                    self.global_map.remove_point(p, f)
+                    if len(self.global_map.viewed_frames[p]) < 2:
+                        self.global_map.viewed_frames[p].clear()
+                        self.global_map.pw[p] = None
+                        pt_num += 1
+                        break
+        print("remove %d landmarks, %d points" % (landmark_num, pt_num))
 
 
 class GlobalMap(object):
@@ -131,12 +155,13 @@ class GlobalMap(object):
             else:
                 raise TypeError
             frm.pi, frm.des = frm.detect_kps(gray, self.detector)
-        frm.cam = PinHoleCamera(f=f, fx=fx, fy=fy, img_w=img_w, img_h=img_h)
+        exif_info = {"f": f, "fx": fx, "fy": fy, "img_w": img_w, "img_h": img_h}
+        frm.cam = PinHoleCamera(**exif_info)
 
         cur_idx = len(self.frames)
         frm.frm_idx = cur_idx
         self.match_map[cur_idx] = {}
-        print("total %d key-points detected in Frame %d" % (len(frm.des), cur_idx))
+        print("frame %d: exif = %s; %d key-points detected" % (cur_idx, exif_info, len(frm.des)))
         if cur_idx == 0:   # the first Frame
             self.window.append(cur_idx)
             self.frames.append(frm)
@@ -164,31 +189,35 @@ class GlobalMap(object):
                 max_iter=self.config.ransac_iter,
                 solve_pose=False
             )
-            print("there are %d matching kps between frame (%d, %d)" % (len(inliers), ref.frm_idx, frm.frm_idx))
+            print("%d matches between frame (%d, %d)" % (len(inliers), ref.frm_idx, frm.frm_idx))
 
             if len(inliers) > self.config.least_match_num:  # enough matching pairs
                 matching_num += 1
                 for k in inliers:
-                    if idx0[k] not in ref.pi_pw:
-                        ref.pw_pi[num] = idx0[k]
-                        frm.pw_pi[num] = idx1[k]
+                    if idx0[k] not in ref.pi_pw:    # add a new point
+                        if idx0[k] in ref.pi_pw or idx1[k] in frm.pi_pw:
+                            continue
                         ref.pi_pw[idx0[k]] = num
                         frm.pi_pw[idx1[k]] = num
+                        ref.pw_pi[num] = idx0[k]
+                        frm.pw_pi[num] = idx1[k]
                         # create a new point
                         self.pw.append(None)
                         self.viewed_frames.append(set())
                         self.viewed_frames[-1].add(ref.frm_idx)
                         self.viewed_frames[-1].add(frm.frm_idx)
                         num += 1
-                    else:
+                    else:   # an existing point
                         pt_idx = ref.pi_pw[idx0[k]]
+                        if pt_idx in frm.pw_pi or idx1[k] in frm.pi_pw:
+                            continue
                         frm.pw_pi[pt_idx] = idx1[k]
                         frm.pi_pw[idx1[k]] = pt_idx
                         self.viewed_frames[pt_idx].add(frm.frm_idx)
             else:
                 inliers = []
-            self.match_map[cur_idx][ref_idx] = (len(inliers), E.T)
-            self.match_map[ref_idx][cur_idx] = (len(inliers), E)
+            self.match_map[cur_idx][ref_idx] = [len(inliers), E.T]
+            self.match_map[ref_idx][cur_idx] = [len(inliers), E]
 
         self.frames.append(frm)
         if matching_num > 0 or self.sequential is False:
@@ -225,7 +254,7 @@ class GlobalMap(object):
             return False, None
         frm.cam.R, frm.cam.t, _ = epnp.solve_pnp_ransac(frm.cam.K, pw, pi, iteration=300)
         err = frm.cam.calc_projection_error(pw, pi)
-        if err < self.config.pj_err_th:
+        if err < self.config.pnp_pj_th:
             print("Frame %d: %d points in view, re-projection error: %.4f" % (frm_idx, len(pw), err))
             frm.pj_err = err
             frm.status = True
@@ -264,6 +293,17 @@ class GlobalMap(object):
                 err = np.linalg.norm(pi - pi_)
                 if err > 5 or pc[0].z < 1:
                     frm.kps_idx[i] = np.Inf
+
+    def remove_point(self, pt_idx, frm_idx):
+        frm = self.frames[frm_idx]
+        pi_idx = frm.pw_pi[pt_idx]
+        frm.pw_pi.pop(pt_idx)
+        frm.pi_pw.pop(pi_idx)
+        self.viewed_frames[pt_idx].remove(frm_idx)
+        for f in self.viewed_frames[pt_idx]:
+            if f in self.match_map[frm_idx]:
+                self.match_map[frm_idx][f][0] -= 1
+                self.match_map[f][frm_idx][0] -= 1
 
     def reconstruction(self, frm):
         if frm.status is False:
@@ -308,7 +348,7 @@ class GlobalMap(object):
             if self.pw[p] is None:
                 status, err = self.__is_valid_point__(
                     pw[k], ref_cam, mat_cam, pi0[k], pi1[k],
-                    threshold=self.config.pj_err_th
+                    threshold=np.Inf    # self.config.pj_err_th
                 )
                 if status is False:
                     continue
@@ -341,7 +381,8 @@ class GlobalMap(object):
             if len(pw_idx) < self.config.least_match_num:
                 continue
             pw, pw_idx, err = self.triangulate_with_2frames(ref.cam, mat.cam, pi0, pi1, pw_idx)
-            print("initialize with Frame %d & %d, err = %.4f" % (ref.frm_idx, mat.frm_idx, err))
+            print("initialize with %d points in frame %d & %d, err = %.4f" % 
+            (len(pw_idx), ref.frm_idx, mat.frm_idx, err))
             if err < err_min:
                 match_best = pair
                 ref_pose = (ref.cam.R, ref.cam.t)
@@ -352,7 +393,8 @@ class GlobalMap(object):
         ref = self.frames[match_best[0]]
         mat = self.frames[match_best[1]]
         if err_min < self.config.pj_err_th:
-            print("Initialize with Frame %d & %d, re-projection error = %.5f" % (ref.frm_idx, mat.frm_idx, err_min))
+            print("best initialization is frame %d & %d, re-projection error = %.5f" % 
+            (ref.frm_idx, mat.frm_idx, err_min))
             ref.cam.R, ref.cam.t = ref_pose
             mat.cam.R, mat.cam.t = mat_pose
             self.register_frame(ref)

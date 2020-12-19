@@ -44,7 +44,7 @@ class SparseBa(Optimizer):
         self.fixed_pt_num = 0
         self.fixed_frm_num = 0
 
-        self.cam_block_size = (2, 9)
+        self.cam_block_size = (2, 7)
         self.point_block_size = (2, 3)
         self.radius = 2e-3
         self.rpj_err = None
@@ -77,8 +77,9 @@ class SparseBa(Optimizer):
                 fu, fv, t = frm.cam.fx, frm.cam.fy, frm.cam.t
 
                 jpose = derr_over_dcam(q, t, fu, fv, pt)
-                jfuv = derr_over_df(q, t, pt)
-                self.jc_data.append(np.column_stack((jpose, jfuv)))
+                # jfuv = derr_over_df(q, t, pt)
+                # self.jc_data.append(np.column_stack((jpose, jfuv)))
+                self.jc_data.append(jpose)
                 self.indices_c.append(j)
 
                 jpt = derr_over_dpw(q, t, fu, fv, pt)
@@ -150,19 +151,6 @@ class SparseBa(Optimizer):
         self.hcp = self.jc.transpose() * self.jp
         self.hpc = self.hcp.transpose()
 
-    def solve(self):
-        self.calc_jacobian_mat()
-        self.calc_block_hessian_mat()
-        self.rpj_err, self.loss = self.calc_reprojection_err()
-        print("loss = %.5f" % self.loss)
-
-        bc = self.jc.transpose() * self.rpj_err
-        bp = self.jp.transpose() * self.rpj_err
-        dx = solve_block_equation([self.hcc, self.hcp, self.hpc, self.hpp], [bc, bp])
-        var = self.local_map.get_variables()
-        var += dx
-        self.local_map.set_variables(var)
-
     def solve_lm(self, window=None):
         window = window or self.global_map.window
         self.get_local_map_in_window(window)
@@ -201,3 +189,17 @@ class SparseBa(Optimizer):
 
             if terminate_flag or iteration >= self.max_iteration:
                 break
+
+    def solve(self, max_iter=15, window=None, filter_err=True):
+        if filter_err:
+            self.max_iteration = max_iter * 0.7
+        else:
+            self.max_iteration = max_iter
+
+        self.solve_lm(window)
+
+        if filter_err:
+            self.local_map.filter_error_points()
+            self.max_iteration = max_iter * 0.3
+            self.solve_lm(window)
+
