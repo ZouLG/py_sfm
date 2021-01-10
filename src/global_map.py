@@ -16,7 +16,7 @@ class Config(object):
         self.double_check = True
 
         # essential matrix param
-        self.e_threshold = 5e-5
+        self.e_threshold = 1e-4
         self.ransac_iter = 300
 
         # pnp params
@@ -190,29 +190,27 @@ class GlobalMap(object):
                 solve_pose=False
             )
             print("%d matches between frame (%d, %d)" % (len(inliers), ref.frm_idx, frm.frm_idx))
-
             if len(inliers) > self.config.least_match_num:  # enough matching pairs
                 matching_num += 1
                 for k in inliers:
-                    if idx0[k] not in ref.pi_pw:    # add a new point
-                        if idx0[k] in ref.pi_pw or idx1[k] in frm.pi_pw:
-                            continue
-                        ref.pi_pw[idx0[k]] = num
-                        frm.pi_pw[idx1[k]] = num
-                        ref.pw_pi[num] = idx0[k]
-                        frm.pw_pi[num] = idx1[k]
-                        # create a new point
-                        self.pw.append(None)
-                        self.viewed_frames.append(set())
-                        self.viewed_frames[-1].add(ref.frm_idx)
-                        self.viewed_frames[-1].add(frm.frm_idx)
-                        num += 1
-                    else:   # an existing point
+                    if idx0[k] not in ref.pi_pw:
+                        if idx1[k] in frm.pi_pw:   # an existing point in frm
+                            pt_idx = frm.pi_pw[idx1[k]]
+                            ref.register_point(pt_idx, idx0[k])
+                            self.viewed_frames[pt_idx].add(ref.frm_idx)
+                        else:    # add a new point
+                            self.pw.append(None)
+                            ref.register_point(num, idx0[k])
+                            frm.register_point(num, idx1[k])
+                            self.viewed_frames.append(set())
+                            self.viewed_frames[-1].add(ref.frm_idx)
+                            self.viewed_frames[-1].add(frm.frm_idx)
+                            num += 1
+                    else:   # an existing point in ref
                         pt_idx = ref.pi_pw[idx0[k]]
                         if pt_idx in frm.pw_pi or idx1[k] in frm.pi_pw:
                             continue
-                        frm.pw_pi[pt_idx] = idx1[k]
-                        frm.pi_pw[idx1[k]] = pt_idx
+                        frm.register_point(pt_idx, idx1[k])
                         self.viewed_frames[pt_idx].add(frm.frm_idx)
             else:
                 inliers = []
@@ -250,7 +248,7 @@ class GlobalMap(object):
         frm = self.frames[frm_idx]
         pw, pi, _ = self.collect_pnp_points(frm)
         if len(pw) < self.config.pnp_pts_num:
-            print("Warning: Frame %d doesn't has enough points in view" % len(pw))
+            print("Warning: Frame %d doesn't has enough points in view" % frm_idx)
             return False, None
         frm.cam.R, frm.cam.t, _ = epnp.solve_pnp_ransac(frm.cam.K, pw, pi, iteration=300)
         err = frm.cam.calc_projection_error(pw, pi)
@@ -308,7 +306,6 @@ class GlobalMap(object):
     def reconstruction(self, frm):
         if frm.status is False:
             return
-
         matches = self.match_map[frm.frm_idx]
         for k in matches.keys():
             ref = self.frames[k]
@@ -382,7 +379,7 @@ class GlobalMap(object):
                 continue
             pw, pw_idx, err = self.triangulate_with_2frames(ref.cam, mat.cam, pi0, pi1, pw_idx)
             print("initialize with %d points in frame %d & %d, err = %.4f" % 
-            (len(pw_idx), ref.frm_idx, mat.frm_idx, err))
+                (len(pw_idx), ref.frm_idx, mat.frm_idx, err))
             if err < err_min:
                 match_best = pair
                 ref_pose = (ref.cam.R, ref.cam.t)
@@ -393,8 +390,8 @@ class GlobalMap(object):
         ref = self.frames[match_best[0]]
         mat = self.frames[match_best[1]]
         if err_min < self.config.pj_err_th:
-            print("best initialization is frame %d & %d, re-projection error = %.5f" % 
-            (ref.frm_idx, mat.frm_idx, err_min))
+            print("best initialization is frame %d & %d, re-projection error = %.5f" %
+                (ref.frm_idx, mat.frm_idx, err_min))
             ref.cam.R, ref.cam.t = ref_pose
             mat.cam.R, mat.cam.t = mat_pose
             self.register_frame(ref)
@@ -420,3 +417,4 @@ class GlobalMap(object):
         points = [p for p in self.pw if p is not None]
         cameras = [f.cam for f in self.frames if f.status is True]
         plot_map(points, cameras)
+

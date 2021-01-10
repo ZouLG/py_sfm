@@ -1,3 +1,9 @@
+def save_list_to_txt(arr, f):
+    with open(f, 'w') as file:
+        for i in arr:
+            file.writelines(str(i) + "\n")
+
+
 def binary_search(g, k):
     start = 0
     end = len(g) - 1

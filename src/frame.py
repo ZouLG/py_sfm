@@ -14,6 +14,8 @@ def get_common_points(ref, frm):
     i, j = 0, 0
     ref_pw = list(ref.pw_pi.keys())
     frm_pw = list(frm.pw_pi.keys())
+    ref_pw.sort()
+    frm_pw.sort()
     m, n = len(ref_pw), len(frm_pw)
     pw_idx, idx0, idx1 = [], [], []
     while i < m and j < n:
@@ -101,6 +103,10 @@ class Frame(object):
         self.frm_idx = None
         self.status = False
         self.img_data = None    # for debug use
+
+    def register_point(self, pt_idx, pi_idx):
+        self.pw_pi[pt_idx] = pi_idx
+        self.pi_pw[pi_idx] = pt_idx
 
     @staticmethod
     def detect_kps(img, detector, response_th=0.0, num_per_blk=10, blk_size=None):

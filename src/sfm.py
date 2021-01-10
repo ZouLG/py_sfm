@@ -14,7 +14,7 @@ class Sfm(object):
 
     def reconstruct(self):
         for k, img in enumerate(self.img_name_list):
-            if k in [0, 1, 2, 3, 4, 5]:
+            if k in [0, 1, 2]:
                 self.global_map.add_a_frame(Frame(), img, 1)
 
         # init with 2 frames
@@ -28,7 +28,7 @@ class Sfm(object):
         while status:
             status, frm = self.global_map.localise_a_frame()
             if status is True:
-                self.ba.solve(filter_err=False)
+                self.ba.solve(filter_err=True)
                 save_to_ply(self.global_map.pw, "../data/pcd_%d_before.ply" % frm.frm_idx)
 
                 self.global_map.reconstruction(frm)
@@ -43,12 +43,13 @@ class Sfm(object):
                 num += 1
         print(num)
 
-        frm0 = self.global_map.frames[0]
-        frm1 = self.global_map.frames[1]
-        frm2 = self.global_map.frames[2]
-        draw_common_kps(frm0, frm1)
-        draw_common_kps(frm1, frm2)
-        draw_common_kps(frm0, frm2)
+        # frm0 = self.global_map.frames[0]
+        # frm1 = self.global_map.frames[1]
+        # frm2 = self.global_map.frames[2]
+        # test(self.global_map)
+        # draw_common_kps(frm0, frm1)
+        # draw_common_kps(frm1, frm2)
+        # draw_common_kps(frm0, frm2)
 
 
 if __name__ == "__main__":
