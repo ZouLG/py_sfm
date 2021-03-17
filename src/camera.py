@@ -78,12 +78,11 @@ def camera_triangulation_old(camera1, camera2, p2d1, p2d2):
     return p3d, p3d1, p3d2
 
 
-def camera_triangulation(camera1, camera2, pi1, pi2, filter=False):
+def camera_triangulation(camera1, camera2, pi1, pi2):
     """
     get the back-projected 3D points from the 2D key-points in two views
         camera1 & camera2: the two cameras
         pi1 & pi2: Nx2 array which stores the 2D key-points of the two cameras
-        filter: ignore points which have small view angles when filter is True
         return: reconstructed points' coordinates in world-frame
     """
     assert pi1.shape == pi2.shape

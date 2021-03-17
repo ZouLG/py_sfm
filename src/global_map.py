@@ -12,6 +12,7 @@ from queue import deque
 class Config(object):
     def __init__(self):
         # kps detection param
+        self.num_per_blk = 5
         self.knn_ratio = 0.9
         self.double_check = True
 
@@ -21,26 +22,39 @@ class Config(object):
 
         # pnp params
         self.pnp_pts_num = 50
-        self.least_match_num = 20
-        self.pnp_pj_th = 50
+        self.least_match_num = 100
+        self.pnp_pj_th = float("inf")
 
         # param for filtering error points
-        self.pj_err_th = 20
-        self.filter_th = 5
+        self.pj_err_th = 50
+        self.filter_th = 3
 
         self.scale = 100
         self.window_size = 1e9
 
 
 class LocalMap(object):
-    def __init__(self, global_map, window):
+    def __init__(self, global_map, **kwargs):
+        """
+            global_map: the global map.
+            kwargs:
+                window: indexes of interested frames in global_map
+                pw_index: indexes of interested 3d points in global_map
+        """
         super(LocalMap, self).__init__()
-        # remove frames which status is False
-        window = [global_map.frames[i].frm_idx for i in window if global_map.frames[i].status is True]
-        self.window = set(window)
-        self.pw_index = []
         self.global_map = global_map
-        self.split_map_from_global()
+        window = kwargs.get("window", None)
+        if window is not None and len(window) > 0:
+            window = [global_map.frames[i].frm_idx for i in window if global_map.frames[i].status]
+            self.window = set(window)
+            self.pw_index = []
+            self.split_map_from_global()
+        else:
+            pw_index = kwargs.get("pw_index", None)
+            assert pw_index is not None, "param pw_index can't be None"
+            pw_index = [i for i in pw_index if self.global_map.pw[i] is not None]
+            self.window = set()
+            self.pw_index = pw_index
 
     def split_map_from_global(self):
         self.pw_index = []
@@ -51,7 +65,7 @@ class LocalMap(object):
             for j in self.global_map.viewed_frames[i]:
                 if j in self.window:
                     viewed_num += 1
-            if viewed_num >= 2:
+            if viewed_num >= 1:
                 self.pw_index.append(i)
 
     def get_variables(self):
@@ -63,10 +77,11 @@ class LocalMap(object):
             variables.append(frm.cam.t)
             # variables.append(np.array((frm.cam.fx, frm.cam.fy)))
 
-        for pt_idx in self.pw_index:
-            p = self.global_map.pw[pt_idx]
-            assert p is not None, "Point3D %d is unknown" % pt_idx
-            variables.append(p.p)
+        if len(self.window) != 1:    # when more than 2 frames
+            for pt_idx in self.pw_index:
+                p = self.global_map.pw[pt_idx]
+                assert p is not None, "Point3D %d is unknown" % pt_idx
+                variables.append(p.p)
         return np.concatenate(variables).copy()
 
     def set_variables(self, var):
@@ -80,11 +95,12 @@ class LocalMap(object):
             # frm.cam.fy = var[k + 8]
             k += 7
 
-        for pt_idx in self.pw_index:
-            p = self.global_map.pw[pt_idx]
-            assert p is not None, "Point3D %d is unknown" % pt_idx
-            p.p = var[k: k + 3]
-            k += 3
+        if len(self.window) != 1:    # when more than 2 frames
+            for pt_idx in self.pw_index:
+                p = self.global_map.pw[pt_idx]
+                assert p is not None, "Point3D %d is unknown" % pt_idx
+                p.p = var[k: k + 3]
+                k += 3
 
     def filter_error_points(self):
         pt_num, landmark_num = 0, 0
@@ -124,37 +140,32 @@ class GlobalMap(object):
         self.match_map = {}
         self.viewed_frames = []
         self.config = config
-        self.detector = cv2.xfeatures2d_SIFT.create()
         self.debug = debug
         self.sequential = sequential
 
-    def add_a_frame(self, frm, *args):
+    def add_a_frame(self, frm, jpg_name, detector, resize_scale=1):
         # detect & match kps of frm with previous frames
         f, fx, fy, img_w, img_h = 1.0, 500, 500, 1920, 1080
-        if len(args) > 1:
-            if isinstance(args[0], str):
-                resize_scale = 1
-                if len(args) > 1:
-                    resize_scale = args[1]
-                color = cv2.imread(args[0])
-                exif_info = Frame.get_exif_info(args[0])
-                f = exif_info['f']
-                fx = exif_info['fx'] / resize_scale
-                fy = exif_info['fy'] / resize_scale
-                img_h, img_w, _ = color.shape
-                img_w = img_w // resize_scale
-                img_h = img_h // resize_scale
-                color = cv2.resize(color, (img_w, img_h))
-                gray = cv2.cvtColor(color, cv2.COLOR_RGB2GRAY)
-                if self.debug:
-                    frm.img_data = color    # for debug use
-            elif isinstance(args[0], np.ndarray):
-                gray = args[0]
-                img_w, img_h = gray.shape[1], gray.shape[0]
-                fx, fy = img_w / 2, img_h / 2
-            else:
-                raise TypeError
-            frm.pi, frm.des = frm.detect_kps(gray, self.detector)
+        color = cv2.imread(jpg_name)
+        img_h, img_w, _ = color.shape
+        img_w = img_w // resize_scale
+        img_h = img_h // resize_scale
+        color = cv2.resize(color, (img_w, img_h))
+        gray = cv2.cvtColor(color, cv2.COLOR_RGB2GRAY)
+        try:
+            exif_info = Frame.get_exif_info(jpg_name)
+            f = exif_info['f']
+            fx = exif_info['fx'] / resize_scale
+            fy = exif_info['fy'] / resize_scale
+        except Exception:
+            print("Warning: get exif from jpg failed!")
+            f = 1.0
+            fx = img_w / 2
+            fy = img_h / 2
+        if self.debug:
+            frm.img_data = color    # for debug use
+
+        frm.pi, frm.des = frm.detect_kps(gray, detector, num_per_blk=self.config.num_per_blk)
         exif_info = {"f": f, "fx": fx, "fy": fy, "img_w": img_w, "img_h": img_h}
         frm.cam = PinHoleCamera(**exif_info)
 
@@ -306,6 +317,7 @@ class GlobalMap(object):
     def reconstruction(self, frm):
         if frm.status is False:
             return
+        pw, pw_idx = [], []
         matches = self.match_map[frm.frm_idx]
         for k in matches.keys():
             ref = self.frames[k]
@@ -314,7 +326,10 @@ class GlobalMap(object):
             pi0, pi1, idx = get_common_points(ref, frm)
             pw_valid, idx_valid, err = self.triangulate_with_2frames(frm.cam, ref.cam, pi0, pi1, idx)
             print("reconstruct %d points with Frame %d & %d" % (len(pw_valid), ref.frm_idx, frm.frm_idx))
-            self.register_points(pw_valid, idx_valid)
+            pw += pw_valid
+            pw_idx += idx_valid
+        self.register_points(pw, pw_idx)
+        return pw, pw_idx
 
     def estimate_pose_with_2frames(self, ref, mat):
         # init ref pose if it is unknown
@@ -412,9 +427,9 @@ class GlobalMap(object):
         for frm_idx in self.window:
             self.frames[frm_idx].sort_kps_by_idx()
 
-    def plot_map(self):
+    def plot_map(self, sample=1.0):
         from file_op import plot_map
         points = [p for p in self.pw if p is not None]
         cameras = [f.cam for f in self.frames if f.status is True]
-        plot_map(points, cameras)
+        plot_map(points, cameras, sample=sample)
 

@@ -39,8 +39,8 @@ def plot_map(pt_list, cam_list, sample=1.0):
         zmax = max(zmax, pt.z)
         pt.plot3d(ax, marker='.', color='blue', s=1)
 
-    # for cam in cam_list:
-    #     cam.show(ax)
+    for cam in cam_list:
+        cam.show(ax)
 
     w_x = xmax - xmin
     w_y = ymax - ymin
@@ -74,7 +74,7 @@ def save_to_ply(pw, file, scale=1, filter_radius=np.Inf):
 
 def test_plot_map():
     pw = [Point3D((0, 0, 0)), Point3D((0, 0, 10)), Point3D((20, 0, 0))]
-    # plot_map(pw, [])
+    plot_map(pw, [])
     plt.show()
 
 
