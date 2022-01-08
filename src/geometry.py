@@ -269,6 +269,7 @@ def solve_re_linearization(M, s_dim):
 
 
 def plot_quadratic_form(A, d, xlim=10, ylim=10, width=200, height=200):
+    import matplotlib.pyplot as plt
     img = np.zeros((height, width))
     px = np.linspace(-xlim, xlim, width)
     py = np.linspace(-ylim, ylim, height)

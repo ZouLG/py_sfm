@@ -4,6 +4,19 @@ import matplotlib.pyplot as plt
 from point import Point3D, list2mat
 
 
+def dump_object(obj, file):
+    import pickle
+    with open(file, "wb") as f:
+        pickle.dump(obj, f)
+
+
+def load_object(file):
+    import pickle
+    with open(file, "rb") as f:
+        obj = pickle.load(f)
+    return obj
+
+
 def set_axis_limit(ax, center, width):
     assert len(center) == 3
     half = width / 2
@@ -50,26 +63,55 @@ def plot_map(pt_list, cam_list, sample=1.0):
     set_axis_limit(ax, c, w)
 
 
-def save_to_ply(pw, file, scale=1, filter_radius=np.Inf):
-    pw = [p for p in pw if isinstance(p, Point3D)]
-    data = list2mat(pw)
-    center = np.median(data, axis=0)
-    pw_filter = []
-    for p in data:
-        if np.linalg.norm(p - center) > filter_radius:
-            continue
-        pw_filter.append((p - center) * scale)
-    data = np.row_stack(pw_filter)
+def save_map_to_ply(global_map, file):
+    pw = [p for p in global_map.pw if isinstance(p, Point3D)]
+    cams = [frm.cam for frm in global_map.frames if frm.status is True]
+    pts_num = len(pw)
+    cam_num = len(cams)
+    pt_cams = []
+    for cam in cams:
+        pt_cams += cam.get_img_plane()
+        pt_cams.append(cam.get_camera_center())
 
-    ply_head = ["ply", "format ascii 1.0", "comment Created by Python Sfm",
-                "element vertex %d" % len(data), "property float x",
-                "property float y", "property float z", "end_header"]
+    ply_head = [
+        "ply",
+        "format ascii 1.0",
+        "comment Created by Python Sfm",
+        "element vertex %d" % (pts_num + len(pt_cams)),
+        "property float x",
+        "property float y",
+        "property float z",
+        "property uchar red",
+        "property uchar green",
+        "property uchar blue",
+        "element edge %d" % (cam_num * 8),
+        "property int vertex1",
+        "property int vertex2",
+        "element face %d" % 0,
+        "end_header"
+    ]
+
     with open(file, 'w') as f:
         for s in ply_head:
             f.writelines(s + "\n")
-        for p in data:
-            f.writelines("%f %f %f\n" % (p[0], p[1], p[2]))
-    print("save %d points to %s" % (data.shape[0], file))
+
+        """ vertexes of camera center & plane """
+        for p in pt_cams:
+            f.writelines("%f\t%f\t%f\t" % (p.x, p.y, p.z))
+            f.writelines("%d\t%d\t%d\n" % (255, 0, 0))
+
+        """ world points """
+        for p in pw:
+            f.writelines("%f\t%f\t%f\t" % (p.x, p.y, p.z))
+            color = p.color or (0, 0, 255)
+            f.writelines("%d\t%d\t%d\n" % (color[0], color[1], color[2]))
+
+        """ edges of camera plane """
+        for i in range(cam_num):
+            for j in range(4):
+                f.writelines("%d\t%d\n" % (5 * i + j, 5 * i + 4))
+                f.writelines("%d\t%d\n" % (5 * i + j, 5 * i + (j + 1) % 4))
+        print("saved %d points and %d cameras to %s" % (pts_num, cam_num, file))
 
 
 def test_plot_map():

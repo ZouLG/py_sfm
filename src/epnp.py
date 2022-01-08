@@ -182,7 +182,7 @@ def epnp_ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
     for i in range(iter):
         index = random.sample(range(N), batch_num)
         if False:   # geo.is_co_plannar(pw[index]):
-            continue
+            pass
         pw_tmp, pi_tmp = get_by_idx(pw, pi, index)
         R, t = estimate_pose_epnp(K, pw_tmp, pi_tmp)
         cam = PinHoleCamera(R=R, t=t, K=K)
@@ -210,7 +210,7 @@ def epnp_ransac_estimate_pose(K, pw, pi, iter=20, threshold=50):
     return R_best, t_best, inlier_best
 
 
-def solve_pnp(K, pw, pi, use_cv2=True):
+def solve_pnp(K, pw, pi, use_cv2=False):
     if use_cv2:
         state, rv, t = cv2.solvePnP(list2mat(pw), pi, K, 0)
         R = geo.rodriguez(rv, np.linalg.norm(rv))
@@ -219,7 +219,7 @@ def solve_pnp(K, pw, pi, use_cv2=True):
         return estimate_pose_epnp(K, pw, pi)
 
 
-def solve_pnp_ransac(K, pw, pi, iteration=100, threshold=5, use_cv2=True):
+def solve_pnp_ransac(K, pw, pi, iteration=100, threshold=5, use_cv2=False):
     if use_cv2:
         state, rv, t, inliers = cv2.solvePnPRansac(list2mat(pw), pi, K, 0)
         R = geo.rodriguez(rv, np.linalg.norm(rv))

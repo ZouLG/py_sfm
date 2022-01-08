@@ -190,13 +190,7 @@ class PinHoleCamera(object):
         ax.quiver(o.x, o.y, o.z, ey[0], ey[1], ey[2], normalize=True, color='green')
         ax.quiver(o.x, o.y, o.z, ez[0], ez[1], ez[2], normalize=True, color='blue')
 
-        sx, sy = [self.f / self.fx, self.f / self.fy]
-        c = o + ez * self.f
-        p0 = c - ex * sx * self.img_w / 2 - ey * sy * self.img_h / 2
-        p1 = c + ex * sx * self.img_w / 2 - ey * sy * self.img_h / 2
-        p2 = c + ex * sx * self.img_w / 2 + ey * sy * self.img_h / 2
-        p3 = c - ex * sx * self.img_w / 2 + ey * sy * self.img_h / 2
-
+        p0, p1, p2, p3 = self.get_img_plane()
         p0.plot3d(ax, color='red', marker='.', s=20)
         p1.plot3d(ax, color=color, marker='.', s=20)
         p3.plot3d(ax, color=color, marker='.', s=20)
@@ -303,6 +297,22 @@ class PinHoleCamera(object):
             get the coordinate of the PinHoleCamera center in the world-Frame
         """
         return Point3D(-np.matmul(self.R.T, self.t))
+
+    def get_img_plane(self):
+        """
+            return the four vertexes of the image plane
+        """
+        o = geo.rigid_inv_transform(Point3D((0, 0, 0)), self.R, self.t)
+        ex = self.R[0, :]
+        ey = self.R[1, :]
+        ez = self.R[2, :]
+        sx, sy = [self.f / self.fx, self.f / self.fy]
+        c = o + ez * self.f
+        p0 = c - ex * sx * self.img_w / 2 - ey * sy * self.img_h / 2
+        p1 = c + ex * sx * self.img_w / 2 - ey * sy * self.img_h / 2
+        p2 = c + ex * sx * self.img_w / 2 + ey * sy * self.img_h / 2
+        p3 = c - ex * sx * self.img_w / 2 + ey * sy * self.img_h / 2
+        return p0, p1, p2, p3
 
     def get_essential_mat(self):
         return np.matmul(geo.cross_mat(self.t), self.R)

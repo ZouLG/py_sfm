@@ -5,8 +5,9 @@ __all__ = ["Point3D", "list2mat", "mat2list"]
 
 
 class Point3D(object):
-    def __init__(self, vector):
+    def __init__(self, vector, color=None):
         super(Point3D, self).__init__()
+        self.color = color
         if isinstance(vector, Point3D):
             self.p = vector.p
         else:
@@ -20,24 +21,6 @@ class Point3D(object):
         return str(self.p)
 
     def __setattr__(self, key, value):
-        # ptmp = np.zeros((3,))
-        # if key == 'x':
-        #     ptmp[0] = value
-        # elif key == 'y':
-        #     ptmp[1] = value
-        # elif key == 'z':
-        #     ptmp[2] = value
-        # elif key == 'p':
-        #     ptmp = value
-        # else:
-        #     print("Error: class Point3D named %s" % key)
-        #     raise KeyError
-        # self.__dict__['x'] = ptmp[0]
-        # self.__dict__['y'] = ptmp[1]
-        # self.__dict__['z'] = ptmp[2]
-        # self.__dict__['p'] = ptmp
-        # self.__dict__['ph'][0: 3] = ptmp
-
         if key == 'x':
             self.__dict__[key] = value
             self.__dict__['p'][0] = value
@@ -64,6 +47,9 @@ class Point3D(object):
             self.__dict__['x'] = value[0]
             self.__dict__['y'] = value[1]
             self.__dict__['z'] = value[2]
+        elif key == "color":
+            assert value is None or len(value) == 3, "color should be None or rgb"
+            self.__dict__["color"] = value
         else:
             raise KeyError
 
@@ -98,7 +84,8 @@ class Point3D(object):
             q = Point3D(np.matmul(R, self.p)) + t
         return q
 
-    def plot3d(self, ax, marker='o', color='blue', s=40):
+    def plot3d(self, ax, marker='o', color=None, s=40):
+        color = color or self.color or "blue"
         ax.scatter(self.x, self.y, self.z, s=s, marker=marker, color=color)
 
 
@@ -130,5 +117,4 @@ if __name__ == "__main__":
 
     fig = plt.figure()
     ax = fig.gca(projection='3d')
-    plane1.show(ax)
     plt.show()
